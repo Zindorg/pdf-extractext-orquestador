@@ -1,0 +1,82 @@
+openapi: 3.1.0
+
+info:
+  title: API del Orquestador
+  version: "0.1.0"
+  description: |
+    <!-- TODO: una o dos frases. Punto de entrada público del sistema. -->
+
+servers:
+  - url: http://localhost:8080
+    description: Local
+
+tags:
+  - name: Ingesta
+  - name: Documentos
+  - name: Salud
+
+paths:
+  /api/v1/documents/extract:
+    post:
+      tags: [Ingesta]
+      summary: Ingesta un documento y encola su persistencia
+      # TODO: multipart con `document` (archivo) y `summarize` (bool, default false)
+      # 202 → cuerpo + Location. 400 · 413 · 415 · 422 · 429 · 502 · 503
+
+  /api/v1/documents/{document_id}:
+    get:
+      tags: [Documentos]
+      summary: Lectura del documento
+      # TODO: proxy al Persistidor. 200 · 404 (también el caso "aún ingerido")
+    delete:
+      tags: [Documentos]
+      summary: Soft delete
+      # TODO: proxy. 204 · 404
+
+  /api/v1/documents:
+    get:
+      tags: [Documentos]
+      summary: Listado paginado con filtros
+      # TODO: page, page_size, status, filename, created_from, created_to, include_deleted
+
+  /api/v1/documents/{document_id}/download/original:
+    get:
+      tags: [Documentos]
+      summary: Descarga del texto extraído
+      # TODO: 200 text/plain + Content-Disposition (RFC 5987) · 400 · 404
+
+  /api/v1/documents/{document_id}/download/summary:
+    get:
+      tags: [Documentos]
+      summary: Descarga del resumen
+      # 200 text/plain · 400 · 404 (summary_not_available) · 409 (solo si el resumen está PENDING)
+
+  /api/v1/documents/{document_id}/restore:
+    post:
+      tags: [Documentos]
+      summary: Restaura un documento soft-deleted
+      # TODO: 204 · 400 · 404 · 409 (conflicto de checksum)
+
+  /health:
+    get:
+      tags: [Salud]
+      summary: Liveness
+      # TODO: 200
+
+  /ready:
+    get:
+      tags: [Salud]
+      summary: Readiness
+      # TODO: 200 · 503
+
+components:
+  schemas:
+    ExtractAccepted:
+      # TODO: document_id, filename, delivery_status, summary_status, metadata, extraction_time_ms, warnings
+    Document:
+      # TODO: lo que devuelve el Persistidor, sin sus identificadores internos
+    Error:
+      # TODO: code, message, details
+
+# TODO: parámetros comunes → header X-Document-Id
+# TODO: 415 content-type no permitido · 413 tamaño máximo · 422 motivos de extracción
