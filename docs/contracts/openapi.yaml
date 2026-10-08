@@ -4,7 +4,13 @@ info:
   title: API del Orquestador
   version: "0.1.0"
   description: |
-    <!-- TODO: una o dos frases. Punto de entrada público del sistema. -->
+    Punto de entrada público del sistema. Recibe documentos, los extrae, opcionalmente les pide un resumen y
+    publica el resultado en el stream de ingesta. La escritura es asíncrona: una admisión aceptada no
+    significa que el documento ya sea consultable (ADR-0001, ADR-0008).
+
+    Las rutas de lectura, listado, descarga y borrado son reenvíos transparentes al Persistidor, con el
+    prefijo `/api/v1` conservado y sin reescritura (ADR-0005). Dos rutas son propiedad del Orquestador:
+    la admisión y el resumen a demanda.
 
 servers:
   - url: http://localhost:8080
@@ -19,64 +25,807 @@ paths:
   /api/v1/documents/extract:
     post:
       tags: [Ingesta]
-      summary: Ingesta un documento y encola su persistencia
-      # TODO: multipart con `document` (archivo) y `summarize` (bool, default false)
-      # 202 → cuerpo + Location. 400 · 413 · 415 · 422 · 429 · 502 · 503
+      summary: Admite un documento, lo extrae y opcionalmente le pide un resumen
+      description: |
+        Ruta propiedad del Orquestador.
+
+        Todo el pipeline ocurre dentro de la petición: extracción, resumen opcional y publicación en el
+        stream. La respuesta `202` se emite cuando el texto **y** el resumen ya están publicados, nunca antes.
+
+        Si el Resumidor falla después de una extracción exitosa, la respuesta es `502` y **no se ingiere nada**:
+        no hay evento en el stream, y por lo tanto no hay documento que el cliente tenga que limpiar.
+
+        `summarize=false` (por defecto) no llama al Resumidor y deja el estado de resumen en `NOT_REQUESTED`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document]
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: |
+                    El documento a procesar. En el MVP solo se acepta PDF. El archivo no se guarda en ningún
+                    sistema de archivos: vive en memoria durante la petición y se transforma en texto.
+                    Tope de 10 MiB por archivo: por encima, `413` desde la puerta 1.
+                summarize:
+                  type: boolean
+                  default: false
+                  description: Si se pide el resumen en esta misma ingesta.
+      responses:
+        "202":
+          description: |
+            Admisión aceptada y pipeline completo. El documento **no** es consultable todavía: su estado de
+            entrega es `INGESTED`.
+          headers:
+            X-Document-Id:
+              $ref: "#/components/headers/XDocumentId"
+            Location:
+              description: |
+                URI absoluta de lectura del documento, a la que el cliente debería ir a consultar el resultado.
+                Es absoluta (RFC 7231 §7.1.2) porque el servicio conoce su path público (ADR-0005: el prefijo
+                `/api/v1` se conserva y no se reescribe), y así el cliente no tiene que componer la URL.
+              schema:
+                type: string
+                format: uri
+                example: https://api.example.com/api/v1/documents/0f8fad5b-d9cb-469f-a165-70867728950e
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractAccepted"
+        "400":
+          description: >-
+            Petición malformada: multipart inválido, `summarize` no booleano, cuerpo ilegible.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: invalid_request, message: "el campo summarize debe ser un booleano" }
+        "413":
+          description: >-
+            El documento excede el tamaño máximo permitido (10 MiB por archivo). Se rechaza en el borde,
+            antes de consumir CPU.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: payload_too_large, message: "el documento excede el máximo permitido" }
+        "415":
+          description: |
+            Tipo de contenido o formato no soportado. El MVP solo acepta PDF; agregar formatos es una
+            extensión del extractor, no un cambio de esta API.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: unsupported_media_type, message: "solo se admite application/pdf" }
+        "422":
+          description: |
+            El documento no se pudo extraer. El motivo **viene del enum que publica el Extractor**, no de una
+            taxonomía propia del Orquestador: este no inventa razones que el extractor no distingue. Llega en
+            `details.reason`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: extraction_failed
+                message: "no se pudo extraer el documento"
+                details: { reason: encrypted_pdf }
+        "429":
+          description: |
+            Se superó el tope de concurrencia de esta réplica. El tope es **por réplica**, no global: un
+            despliegue con varias réplicas admite proporcionalmente más. La extracción tiene un tope ancho y
+            el resumen uno angosto; ambos devuelven `429` con `Retry-After`.
+          headers:
+            Retry-After:
+              description: Segundos que el cliente debería esperar antes de reintentar.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: concurrency_limited, message: "tope de resumen alcanzado en esta réplica" }
+        "502":
+          description: |
+            El Resumidor no respondió **después** de una extracción exitosa. Por la decisión de no publicar
+            nada hasta que todo el pipeline termine, **no se ingirió nada**: no hay evento en el stream y el
+            cliente no tiene que deshacer nada. Reintentar la subida completa es seguro.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: summary_failed, message: "el resumidor no respondió" }
+        "503":
+          description: |
+            El Extractor no está disponible: no se lo puede contactar, o agotó su tiempo de espera de
+            transporte. Es un fallo de infraestructura, no del documento, y por eso no es `422`.
+
+            Tampoco es `internal`: ese dice que el propio servicio falló, y aquí el servicio está sano. Se
+            mantiene aparte porque es el único caso que el cliente puede **reintentar la misma subida** tal
+            como la envió y esperar que la segunda vaya.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: extractor_unavailable, message: "el extractor no respondió" }
+        "500":
+          description: Fallo interno no previsto. El cuerpo no expone detalles internos del servidor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: internal, message: "error interno" }
+
+  /api/v1/documents/{document_id}/summary:
+    post:
+      tags: [Ingesta]
+      summary: Pide el resumen de un documento ya ingerido
+      description: |
+        Ruta propiedad del **Orquestador**, no del Persistidor: el Persistidor no puede llamar al Resumidor
+        porque rompería la regla hub & spoke, y porque no es su responsabilidad.
+
+        Su valor propio es obtener el resumen de un documento ya ingerido **sin obligar al cliente a re-subir
+        el archivo y volver a pagar la extracción**.
+
+        Flujo:
+
+        1. Lee el documento por proxy (`GET /api/v1/documents/{document_id}`).
+        2. Si ya tiene resumen, responde `409` y no hace nada.
+        3. Si no lo tiene, descarga el texto extraído por proxy
+           (`GET /api/v1/documents/{document_id}/download/original`).
+        4. Llama al Resumidor con ese texto.
+        5. Publica `summary_resolved` en el stream.
+        6. Responde `202`.
+
+        **El delta con el Persistidor es cero**: usa las dos rutas de arriba, que ya existen en
+        `ARCHITECTURE_REPOSITORIES.md` §10. Y no es una entrada nueva de la allowlist del proxy
+        (`internal/api/proxy.go`): es un caso de uso del Orquestador, así que la allowlist no crece.
+
+        Dos consecuencias que conviene tener presentes:
+
+        - Consume **el mismo semáforo angosto y el mismo tiempo de espera holgado** que la ingesta, porque es el
+          mismo Resumidor. Por eso también puede devolver `429`, y por eso un resumen a demanda puede ser
+          más lento que una ingesta sin resumen.
+        - El `409` previo es una **guarda de defensa, no la única protección**. El Persistidor descarta en
+          silencio un `summary_resolved` sobre un documento ya completo (`ARCHITECTURE_REPOSITORIES.md` §4),
+          así que una carrera entre dos peticiones simultáneas no duplica el resumen en la base.
+      parameters:
+        - $ref: "#/components/parameters/DocumentIdPath"
+      responses:
+        "202":
+          description: |
+            El resumen se resolvió y el evento está publicado. El estado de resumen pasa a `RESOLVED` cuando
+            el Persistidor lo asiente; hasta entonces se lee por el mismo camino que la ingesta.
+          headers:
+            X-Document-Id:
+              $ref: "#/components/headers/XDocumentId"
+            Location:
+              description: |
+                URI absoluta de lectura del documento, a la que el cliente debería ir a consultar el resultado.
+                Es absoluta (RFC 7231 §7.1.2) porque el servicio conoce su path público (ADR-0005: el prefijo
+                `/api/v1` se conserva y no se reescribe), y así el cliente no tiene que componer la URL.
+              schema:
+                type: string
+                format: uri
+                example: https://api.example.com/api/v1/documents/0f8fad5b-d9cb-469f-a165-70867728950e
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SummaryAccepted"
+        "404":
+          description: |
+            El documento no existe en el Persistidor, **o todavía no fue asentado**. Es el mismo `404` de la
+            lectura: el paso 1 (leer el documento por proxy) no distingue entre "no existe" y "aún no
+            asentado", y el Orquestador no debe adivinar. Por eso aplica la **misma regla con plazo** de la
+            lectura: si el `document_id` vino de un `202` reciente y estamos dentro de la ventana de entrega,
+            el `404` es transitorio y el cliente reintenta el resumen a demanda; pasada la ventana es
+            terminal. Se usa **un solo `code`**, igual que en la lectura.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: document_not_found, message: "no existe el documento" }
+        "409":
+          description: El documento ya tiene un resumen resuelto. No se vuelve a pedir.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: summary_already_resolved
+                message: "el documento ya tiene un resumen"
+        "429":
+          description: Se superó el tope de concurrencia de resumen de esta réplica.
+          headers:
+            Retry-After:
+              description: Segundos que el cliente debería esperar antes de reintentar.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: concurrency_limited, message: "tope de resumen alcanzado en esta réplica" }
+        "502":
+          description: El Resumidor no respondió. No se publicó ningún evento, y el documento queda sin resumen.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: summary_failed, message: "el resumidor no respondió" }
+        "500":
+          description: Fallo interno no previsto.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: internal, message: "error interno" }
 
   /api/v1/documents/{document_id}:
     get:
       tags: [Documentos]
-      summary: Lectura del documento
-      # TODO: proxy al Persistidor. 200 · 404 (también el caso "aún ingerido")
+      summary: Lectura de un documento
+      description: |
+        Reenvío transparente al Persistidor, con el prefijo `/api/v1` conservado.
+
+        ### El `404` no distingue entre los dos casos, y no debe fingir que sí
+
+        Cuando el documento todavía no fue asentado, el Persistidor responde `404` igual que cuando el
+        documento nunca existió. El proxy **no tiene forma de distinguirlos**: los dos casos le llegan igual.
+        Por eso esta API usa **un solo `code`** para los dos. Un `code` distinto para un caso que el servicio
+        no puede detectar sería información inventada, y un cliente que ramifique sobre ella toma decisiones
+        sobre una suposición.
+
+        Lo que sí hay es una regla con plazo, y el plazo lo mide el cliente desde el `202` que ya tiene:
+
+        - **Dentro de la ventana de entrega**, el `404` es **transitorio**: la ingesta fue aceptada y el
+          consumidor todavía no la asentó. El cliente reintenta **la lectura**, con espera creciente.
+        - **Pasada la ventana**, el mismo `404` es **terminal**: la ingesta se perdió. El cliente no reintenta
+          ni la lectura ni la subida; empieza de cero.
+
+        Un `404` sobre un `document_id` que el cliente nunca recibió de un `202` es terminal desde el
+        principio: no hubo ninguna admisión asociada a ese identificador.
+
+        **La ventana es de 60 segundos desde el `202`.** La fija el cliente y por eso no hay ningún header
+        que la transmita: el cliente ya tiene el reloj y ya sabe cuándo recibió la admisión. No es un valor
+        que el servidor pueda cambiar unilateralmente, porque los 60 segundos empiezan en un punto del
+        tiempo que solo el cliente conoce.
+      parameters:
+        - $ref: "#/components/parameters/DocumentIdPath"
+      responses:
+        "200":
+          description: El documento está disponible.
+          headers:
+            X-Document-Id:
+              $ref: "#/components/headers/XDocumentId"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400":
+          description: El `document_id` no es un UUID válido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: invalid_request, message: "document_id inválido" }
+        "404":
+          description: |
+            El documento no está disponible. Aplicar la regla de la ventana de entrega descrita arriba para
+            decidir si conviene reintentar la lectura.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: document_not_found, message: "el documento no está disponible" }
+        "500":
+          description: Fallo interno no previsto.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: internal, message: "error interno" }
     delete:
       tags: [Documentos]
-      summary: Soft delete
-      # TODO: proxy. 204 · 404
+      summary: Borra un documento
+      description: |
+        Reenvío transparente al Persistidor. Es un borrado lógico: el documento deja de ser consultable, pero
+        su identificador no se reutiliza nunca (ADR-0004) y su checksum se libera, de modo que el mismo
+        contenido puede volver a ingerirse con un identificador nuevo (ADR-0003).
+      parameters:
+        - $ref: "#/components/parameters/DocumentIdPath"
+      responses:
+        "204":
+          description: Borrado. Sin cuerpo.
+        "400":
+          description: El `document_id` no es un UUID válido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No existe un documento con ese identificador, o ya estaba borrado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: document_not_found, message: "no existe el documento" }
+        "500":
+          description: Fallo interno no previsto.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: internal, message: "error interno" }
 
   /api/v1/documents:
     get:
       tags: [Documentos]
-      summary: Listado paginado con filtros
-      # TODO: page, page_size, status, filename, created_from, created_to, include_deleted
+      summary: Listado paginado de documentos, con filtros
+      description: Reenvío transparente al Persistidor.
+      parameters:
+        - name: page
+          in: query
+          description: Página, empezando en 1.
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          description: Tamaño de página.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: status
+          in: query
+          description: Filtra por estado de resumen. Acepta los valores de `SummaryStatus`.
+          schema: { $ref: "#/components/schemas/SummaryStatus" }
+        - name: filename
+          in: query
+          description: Filtra por nombre de archivo, coincidencia parcial.
+          schema: { type: string }
+        - name: created_from
+          in: query
+          description: Documents creados desde este instante, inclusive.
+          schema: { type: string, format: date-time }
+        - name: created_to
+          in: query
+          description: Documents creados hasta este instante, inclusive.
+          schema: { type: string, format: date-time }
+        - name: include_deleted
+          in: query
+          description: Incluye los documentos borrados lógicamente.
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Una página de documentos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentList" }
+        "400":
+          description: >-
+            Algún filtro inválido: `page` en cero, `created_from` posterior a `created_to`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Fallo interno no previsto.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: internal, message: "error interno" }
 
   /api/v1/documents/{document_id}/download/original:
     get:
       tags: [Documentos]
       summary: Descarga del texto extraído
-      # TODO: 200 text/plain + Content-Disposition (RFC 5987) · 400 · 404
+      description: |
+        Reenvío transparente al Persistidor.
+
+        A pesar del nombre de la ruta, lo que se descarga es el **texto extraído**, no el archivo original: el
+        archivo no se guarda en ningún lado y el texto es la única representación del contenido que el
+        sistema conserva.
+      parameters:
+        - $ref: "#/components/parameters/DocumentIdPath"
+      responses:
+        "200":
+          description: El texto extraído, en texto plano.
+          headers:
+            Content-Disposition:
+              description: Nombre sugerido para la descarga, codificado según RFC 5987.
+              schema: { type: string }
+          content:
+            text/plain:
+              schema: { type: string }
+        "400":
+          description: El `document_id` no es un UUID válido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >-
+            El documento no está disponible. Misma regla de ventana de entrega que en la lectura.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Fallo interno no previsto.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: internal, message: "error interno" }
 
   /api/v1/documents/{document_id}/download/summary:
     get:
       tags: [Documentos]
       summary: Descarga del resumen
-      # 200 text/plain · 400 · 404 (summary_not_available) · 409 (solo si el resumen está PENDING)
+      description: Reenvío transparente al Persistidor.
+      parameters:
+        - $ref: "#/components/parameters/DocumentIdPath"
+      responses:
+        "200":
+          description: El resumen, en texto plano.
+          headers:
+            Content-Disposition:
+              description: Nombre sugerido para la descarga, codificado según RFC 5987.
+              schema: { type: string }
+          content:
+            text/plain:
+              schema: { type: string }
+        "400":
+          description: El `document_id` no es un UUID válido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >-
+            El documento no existe, o existe pero no tiene resumen porque el cliente no lo pidió. El `code`
+            los distingue: `document_not_found` contra `summary_not_available`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: summary_not_available, message: "el documento no tiene resumen" }
+        "409":
+          description: |
+            El documento tiene un resumen solicitado que todavía está `PENDING`. No es un error: está en
+            camino, y lo distingue del `404` anterior porque el cliente sí lo pidió.
+
+            No es `summary_not_available`: ese dice que el resumen no existe y no va a existir, mientras
+            que este uno sí existe. Un cliente que lo reciba espera y repite la misma lectura; no re-pide el
+            resumen, que daría `409` con otro código.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: summary_pending, message: "el resumen todavía está en curso" }
+        "500":
+          description: Fallo interno no previsto.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: internal, message: "error interno" }
 
   /api/v1/documents/{document_id}/restore:
     post:
       tags: [Documentos]
-      summary: Restaura un documento soft-deleted
-      # TODO: 204 · 400 · 404 · 409 (conflicto de checksum)
+      summary: Restaura un documento borrado lógicamente
+      description: |
+        Reenvío transparente al Persistidor. La restauración puede fallar si el checksum del documento ya
+        está ocupado por otro documento activo; en ese caso es un `409` y no se restaura nada.
+      parameters:
+        - $ref: "#/components/parameters/DocumentIdPath"
+      responses:
+        "204":
+          description: Restaurado. Sin cuerpo.
+        "400":
+          description: El `document_id` no es un UUID válido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: El documento no existe, o no estaba borrado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: El checksum ya está ocupado por otro documento activo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: checksum_conflict
+                message: "el checksum ya está ocupado por otro documento activo"
+        "500":
+          description: Fallo interno no previsto.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: internal, message: "error interno" }
 
   /health:
     get:
       tags: [Salud]
       summary: Liveness
-      # TODO: 200
+      description: |
+        Responde `200` mientras el proceso pueda atender peticiones. No consulta dependencias: un Extractor
+        caído no debe reiniciar el servicio. No declara `500`: si el handler de salud falla, el proceso está
+        muerto y el orquestador de despliegue lo va a notar igual.
+      responses:
+        "200":
+          description: El proceso está vivo.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, examples: ["ok"] }
 
   /ready:
     get:
       tags: [Salud]
       summary: Readiness
-      # TODO: 200 · 503
+      description: |
+        Responde `503` cuando el servicio no debería recibir tráfico: con Redis caído no se puede publicar en
+        el stream, así que admitir documentos solo produciría errores.
+      responses:
+        "200":
+          description: El servicio puede recibir tráfico.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, examples: ["ready"] }
+        "503":
+          description: Una dependencia indispensable no está disponible.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, examples: ["unavailable"] }
+                  reason: { type: string, examples: ["redis no disponible"] }
 
 components:
-  schemas:
-    ExtractAccepted:
-      # TODO: document_id, filename, delivery_status, summary_status, metadata, extraction_time_ms, warnings
-    Document:
-      # TODO: lo que devuelve el Persistidor, sin sus identificadores internos
-    Error:
-      # TODO: code, message, details
+  parameters:
+    DocumentIdPath:
+      name: document_id
+      in: path
+      required: true
+      description: |
+        El identificador del documento (ADR-0004). Es el mismo valor que viaja en el header
+        `X-Document-Id` de la admisión.
+      schema:
+        type: string
+        format: uuid
 
-# TODO: parámetros comunes → header X-Document-Id
-# TODO: 415 content-type no permitido · 413 tamaño máximo · 422 motivos de extracción
+  headers:
+    XDocumentId:
+      description: |
+        El identificador del documento. Viaja en las respuestas de una petición de admisión, para que el
+        cliente pueda correlacionar sin leer el cuerpo.
+      schema:
+        type: string
+        format: uuid
+      example: 0f8fad5b-d9cb-469f-a165-70867728950e
+
+  schemas:
+    DeliveryStatus:
+      type: string
+      description: |
+        Eje de **estado de entrega**: en qué punto del camino está el documento respecto de haber sido
+        persistido. Es independiente del estado de resumen (ADR-0006, `CONTEXT.md`).
+
+        `INGESTED` significa publicado en el stream y pendiente de que el Persistidor lo asiente.
+        `AVAILABLE` significa que ya es consultable por la API.
+      enum:
+        - INGESTED
+        - AVAILABLE
+
+    SummaryStatus:
+      type: string
+      description: |
+        Eje de **estado de resumen**: si el resumen fue pedido y qué le pasó. Su valor lo decide el
+        Orquestador, que es el único que sabe si el cliente lo pidió (ADR-0006).
+      enum:
+        - NOT_REQUESTED
+        - PENDING
+        - RESOLVED
+        - FAILED
+
+    ErrorCode:
+      type: string
+      description: |
+        Vocabulario cerrado de códigos de error. Todo error de la API usa uno de estos valores.
+
+        No es lo mismo que el `code` de una advertencia (`warnings[].code`), que es un vocabulario abierto y
+        describe problemas no fatales en lugar de un fallo.
+
+        `rate_limited` lo emite el borde (Traefik), no este servicio: el servicio no lleva el registro de
+        peticiones que necesitaría para decidir un límite por cliente, y con más de una réplica ese límite
+        sería además inconsistente (ADR-0005, ADR-0007). Está declarado para que un cliente que lo reciba
+        sepa interpretarlo, no porque el servicio lo produzca.
+
+        Cada valor tiene asignada la respuesta donde se usa, y cada respuesta de error usa uno de estos
+        valores. Los dos últimos (`extractor_unavailable` y `summary_pending`) cubren dos estados que el
+        plan original no contemplaba: un fallo de **infraestructura** en la admisión (no del documento), y
+        un resumen **en curso** en la lectura (no ausente).
+      enum:
+        - invalid_request
+        - unsupported_media_type
+        - payload_too_large
+        - extraction_failed
+        - summary_failed
+        - document_not_found
+        - summary_not_available
+        - summary_already_resolved
+        - checksum_conflict
+        - rate_limited
+        - concurrency_limited
+        - extractor_unavailable
+        - summary_pending
+        - internal
+
+    Error:
+      type: object
+      required: [code, message]
+      description: |
+        Envoltorio único de error. Todos los errores tienen la misma forma, para que un cliente pueda
+        distinguir el motivo por `code` y no por parsear el mensaje.
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          description: |
+            Mensaje legible, pensado para una persona. **No** es estable: un cliente no debe ramificar sobre
+            él, solo mostrarlo.
+        details:
+          type: object
+          additionalProperties: true
+          description: |
+            Información estructurada opcional, específica del error. El más usado es `reason` en el `422`
+            de extracción, que lleva el motivo tal como lo publica el Extractor.
+
+    ExtractAccepted:
+      type: object
+      required: [document_id, delivery_status, summary_status, processing_time_ms]
+      description: |
+        Respuesta de una admisión aceptada.
+
+        Sobre los tiempos: `processing_time_ms` es la **suma** de las dos patas, y existe solo acá porque esta
+        respuesta se emite con las dos etapas ya terminadas. Las dos patas viajan por separado y se nombran
+        por lo que miden, nunca con el nombre del total.
+      properties:
+        document_id:
+          type: string
+          format: uuid
+          description: El identificador del documento, generado por el Orquestador al admitir la petición.
+        filename:
+          type: string
+          description: |
+            El nombre que declaró el cliente. Viaja como dato del cliente; el archivo en sí no se guarda.
+        checksum:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: |
+            `sha256` del texto extraído, en minúsculas y hexadecimal (ADR-0003). Es la identidad del
+            contenido, y hace detectable un reintento del cliente.
+        delivery_status:
+          allOf: [{ $ref: "#/components/schemas/DeliveryStatus" }]
+          description: >-
+            Siempre `INGESTED` en esta respuesta: recién publicado, todavía no asentado.
+        summary_status:
+          $ref: "#/components/schemas/SummaryStatus"
+        summary:
+          type: string
+          description: |
+            El resumen, si se pidió y resolvió. Ausente cuando el estado no es `RESOLVED`. La **ausencia** del
+            campo no significa "falló": el estado de resumen es el que dice por qué.
+        processing_time_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Suma de extracción y resumen, en milisegundos. Es el tiempo total de la ingesta.
+        extraction_time_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Duración de la extracción. Es una pata del total, no el total.
+        summary_time_ms:
+          type: [integer, "null"]
+          format: int64
+          description: |
+            Duración del resumen. Es `null` cuando el cliente no lo pidió. No es `0`: `0` significaría "se
+            pidió y fue instantáneo", que es un caso distinto del que el cliente no lo pidió.
+        warnings:
+          type: array
+          description: |
+            Problemas no fatales de la extracción: por ejemplo, texto extraído parcialmente. Un documento
+            con advertencias se admite igual y las advertencias acompañan al cliente en la respuesta.
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code:
+                type: string
+                description: |
+                  Vocabulario **abierto**, a diferencia de `ErrorCode`: el Extractor puede publicar motivos
+                  nuevos de extracción parcial sin romper el contrato.
+              message: { type: string }
+
+    SummaryAccepted:
+      type: object
+      required: [document_id, summary_status, processing_time_ms]
+      description: Respuesta de un resumen a demanda aceptado y publicado.
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        summary_status:
+          allOf: [{ $ref: "#/components/schemas/SummaryStatus" }]
+          description: >-
+            Siempre `RESOLVED` en esta respuesta: el resumen ya se generó y ya se publicó.
+        summary:
+          type: string
+          description: El resumen recién calculado.
+        processing_time_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Duración de esta llamada, que es la del resumen más el tiempo de las lecturas por proxy. No es
+            comparable con el `processing_time_ms` de una admisión, que mide extracción más resumen.
+
+    Document:
+      type: object
+      description: |
+        Documento persistido, reenviado por el Persistidor sin traducir ningún campo.
+
+        No expone los identificadores internos del Persistidor: el `_id` de MongoDB es una clave de
+        almacenamiento y no forma parte de la API. El identificador público es `document_id` (ADR-0004).
+      required: [document_id, delivery_status, summary_status, extracted_text]
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        mime_type:
+          type: string
+          examples: ["application/pdf"]
+        checksum:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        extracted_text:
+          type: string
+          description: El texto extraído. Es la única representación del contenido que el sistema conserva.
+        summary:
+          type: [string, "null"]
+          description: El resumen, o `null` si el documento no tiene ninguno.
+        delivery_status:
+          allOf: [{ $ref: "#/components/schemas/DeliveryStatus" }]
+        summary_status:
+          $ref: "#/components/schemas/SummaryStatus"
+        processing_time_ms:
+          type: integer
+          format: int64
+          description: |
+            Suma de las dos patas. El Persistidor la deriva de `extraction_time_ms` y `summary_time_ms`, que
+            también guarda; ningún evento lleva el total (ver `docs/contracts/events.md`).
+        extraction_time_ms:
+          type: integer
+          format: int64
+        summary_time_ms:
+          type: [integer, "null"]
+          format: int64
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Metadatos declarados por el cliente, sin valores controlados por el servicio.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: [string, "null"]
+          format: date-time
+          description: Instante del borrado lógico, o `null` si el documento está activo.
+
+    DocumentList:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Document" }
+        total:
+          type: integer
+          format: int64
+          description: Total de documentos que cumplen el filtro, no el tamaño de la página.
+        page:
+          type: integer
+        page_size:
+          type: integer

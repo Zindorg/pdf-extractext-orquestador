@@ -1,3 +1,3 @@
 package application
 
-// TODO: ExtractUseCase. Pipeline: recibir → puerta 1 → extraer → puerta 3 → checksum → publicar.
+// TODO: ExtractUseCase. Pipeline: recibir → puerta 1 → extraer → puerta 2 → checksum → publicar.
