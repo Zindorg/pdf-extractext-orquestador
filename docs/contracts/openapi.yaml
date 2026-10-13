@@ -93,12 +93,13 @@ paths:
               example: { code: payload_too_large, message: "el documento excede el máximo permitido" }
         "415":
           description: |
-            Tipo de contenido o formato no soportado. El MVP solo acepta PDF; agregar formatos es una
-            extensión del extractor, no un cambio de esta API.
+            El contenido no tiene la firma `%PDF-`. El tipo se verifica por la firma del archivo, no por el
+            `Content-Type` declarado por el cliente (el cliente es comprometible). El MVP solo acepta PDF;
+            agregar formatos es una extensión del extractor, no un cambio de esta API.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-              example: { code: unsupported_media_type, message: "solo se admite application/pdf" }
+              example: { code: unsupported_media_type, message: "el contenido no comienza con la firma %PDF-" }
         "422":
           description: |
             El documento no se pudo extraer. El motivo **viene del enum que publica el Extractor**, no de una
@@ -773,6 +774,7 @@ components:
           type: string
         mime_type:
           type: string
+          description: Tipo del documento, determinado por el Orquestador a partir de la firma del archivo (`%PDF-`), no del valor declarado por el cliente.
           examples: ["application/pdf"]
         checksum:
           type: string

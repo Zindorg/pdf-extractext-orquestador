@@ -71,7 +71,7 @@ sistema.
 | `document_id` | string (UUID v4) | sí | Identificador de la ingesta (ADR-0004). Es también la clave del mensaje. |
 | `checksum` | string (64 hex) | sí | `sha256` del texto extraído, en minúsculas (ADR-0003). |
 | `extracted_text` | string | sí | El texto extraído. **Es el contenido**: el archivo original no viaja y no se guarda en ningún lado. |
-| `mime_type` | string | sí | Tipo del documento recibido, tal como lo declara el cliente. |
+| `mime_type` | string | sí | Tipo del documento recibido, **verificado por el Orquestador** por la firma `%PDF-` del archivo, no un valor declarado por el cliente. |
 | `summary_requested` | booleano | sí | Si el cliente pidió resumen **en esta ingesta**. |
 | `summary_status` | string | sí | Estado de resumen en el momento de publicar: `RESOLVED` o `NOT_REQUESTED`. Los otros dos valores no pueden aparecer acá, porque este evento se publica cuando el resumen ya resolvió o nunca se pidió. |
 | `extraction_time_ms` | entero | sí | Duración de la extracción **en milisegundos**. Solo esta pata, no el total. |

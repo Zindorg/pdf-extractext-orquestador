@@ -46,7 +46,7 @@ después sin tomar ninguna decisión, y que ningún documento contradiga a otro.
 
 ```
 1. recibir      multipart en RAM, generar document_id (UUID v4)
-2. puerta 1     tamaño · tipo · cifrado                        → 413 / 415 / 400
+2. puerta 1     tamaño · firma PDF (`%PDF-`)                   → 413 / 415
 3. extraer      Extractor por HTTP                            → mide extraction_time_ms
 4. puerta 2     clasificar por motivo                          → 422, nada se ingiere
 5. checksum     sha256(texto extraído) en el productor
@@ -166,8 +166,8 @@ que la suite los detectara. Acá la lógica equivalente son las puertas 1-2, el 
 - La **lógica de aplicación** (pipeline) se testea a través del seam del caso de uso (`ExtractUseCase`), con
   **fakes en memoria** de los puertos (`ExtractorFake`, `SummarizerFake`, `EventPublisherSpy`) — no con mocks
   que devuelven el valor esperado (anti-patrón A1 del análisis previo).
-- Las **puertas** se testean como funciones puras del dominio: gate 1 (tamaño/tipo/cifrado → `413`/`415`/`400`)
-  y gate 2 (motivo del enum → `422`; motivo fuera del enum → `503`). Tabla de pares entrada → salida.
+- Las **puertas** se testean como funciones puras: gate 1 (tamaño/firma PDF → `413`/`415`) y gate 2 (motivo
+  del enum → `422`; motivo fuera del enum → `503`). Tabla de pares entrada → salida.
 - El **orden de publicación** (nada antes de que termine el resumen; `original` antes de `summary_resolved`) se
   asevera con un spy de `EventPublisher`, no revisando Redis.
 - Los **adaptadores** (`http_extractor`, `http_summarizer`) se testean como contract tests contra un servidor

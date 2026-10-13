@@ -35,7 +35,7 @@ paso 3).
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `document` | binary (stream) | El archivo recibido, reenviado sin tocar el disco (Zero-Disk). El cuerpo se reusa tal cual; no se parsea. |
-| `mime_type` | string | El tipo MIME declarado por el cliente, ya validado contra el formato del MVP (solo PDF, ADR-0008). |
+| `mime_type` | string | Tipo del documento **determinado por el Orquestador** a partir de la firma `%PDF-` del archivo, no de un valor declarado por el cliente (el cliente es comprometible). Solo PDF en el MVP (ADR-0008). |
 
 **Response `200`** — `application/json`:
 
@@ -112,8 +112,8 @@ Lo que depende de la implementación real de cada worker, y que **no** se puede 
 2. **El techo de 10 MiB.** La puerta 1 lo aplica en el borde, antes de llamar al Extractor. Si el Extractor
    tiene un límite propio menor, coordinar.
 3. **Formato del cuerpo del Extractor.** Sin servidor de referencia, el shape de `multipart/form-data` es
-   la convención mínima; el `mime_type` extra es el campo que permite que el Extractor decida sin parsear
-   el archivo.
+   la convención mínima; el `mime_type` viaja ya **verificado por el Orquestador** (firma `%PDF-`), de modo
+   que el Extractor no depende de un valor declarado por el cliente.
 4. **`document_too_long` como único motivo del Resumidor.** Pueden aparecer más (ej. texto en idioma no
    soportado); se agregan al enum del Resumidor, que es abierto en la práctica aunque cerrado en este
    contrato.

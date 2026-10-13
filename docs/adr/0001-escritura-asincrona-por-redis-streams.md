@@ -36,7 +36,7 @@ no es obvia y que conviene explicitar:
 
 ```
 1. recibir      multipart en RAM, generar document_id (UUID v4)
-2. puerta 1     tamaño · tipo · cifrado                        → 413 / 415 / 400
+2. puerta 1     tamaño · firma PDF (`%PDF-`)                   → 413 / 415
 3. extraer      Extractor por HTTP                            → mide extraction_time_ms
 4. puerta 2     clasificar por motivo                          → 422, nada se ingiere
 5. checksum     sha256(texto extraído) en el productor
