@@ -49,11 +49,13 @@ type Warning struct {
 	Message string
 }
 
-// Extraction es el resultado de extraer el texto plano del documento.
+// Extraction es el resultado de extraer el texto plano del documento. Reason es el motivo que
+// declaró el Extractor: `success` cuando trae texto, o el motivo del rechazo cuando no.
 type Extraction struct {
 	Text     string
 	TimeMS   int64
 	Warnings []Warning
+	Reason   ExtractionReason
 }
 
 // Summary es el resumen resuelto de un documento.
