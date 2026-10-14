@@ -23,3 +23,21 @@ func validateDocument(size int, head []byte) error {
 	}
 	return nil
 }
+
+// classifyExtractionReason es la puerta 2: admite la extracción solo si el motivo es `success`.
+// Cualquier otro motivo del enum se rechaza con 422; uno fuera del enum es un fallo del Extractor,
+// para no inventar una categoría que el servicio no declaró.
+func classifyExtractionReason(reason domain.ExtractionReason) error {
+	switch reason {
+	case domain.ReasonSuccess:
+		return nil
+	case domain.ReasonEmpty,
+		domain.ReasonEncryptedPDF,
+		domain.ReasonPasswordProtected,
+		domain.ReasonCorrupt,
+		domain.ReasonUnsupportedFeatures:
+		return domain.NewExtractionFailed(reason)
+	default:
+		return domain.ErrExtractorUnavailable
+	}
+}
