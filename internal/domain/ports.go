@@ -9,6 +9,12 @@ type Extractor interface {
 	Extract(ctx context.Context, in IncomingDocument) (Extraction, error)
 }
 
+// Summarizer sintetiza en lenguaje natural el texto extraído. Un resultado o un error suyo hacen
+// fallar la ingesta completa: el resumen se resuelve antes de publicar nada.
+type Summarizer interface {
+	Summarize(ctx context.Context, text string) (Summary, error)
+}
+
 // EventPublisher publica un evento en el stream. Los campos de transporte (`schema_version`,
 // `event_type`) los agrega el adaptador.
 type EventPublisher interface {
