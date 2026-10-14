@@ -34,3 +34,42 @@ func TestValidateDocument(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyExtractionReason(t *testing.T) {
+	t.Run("success se admite", func(t *testing.T) {
+		if err := classifyExtractionReason(domain.ReasonSuccess); err != nil {
+			t.Fatalf("classifyExtractionReason(success) = %v, quería nil", err)
+		}
+	})
+
+	rejected := []domain.ExtractionReason{
+		domain.ReasonEmpty,
+		domain.ReasonEncryptedPDF,
+		domain.ReasonPasswordProtected,
+		domain.ReasonCorrupt,
+		domain.ReasonUnsupportedFeatures,
+	}
+	for _, reason := range rejected {
+		t.Run(string(reason), func(t *testing.T) {
+			err := classifyExtractionReason(reason)
+
+			var domainErr *domain.Error
+			if !errors.As(err, &domainErr) {
+				t.Fatalf("classifyExtractionReason(%q) = %v, quería *domain.Error", reason, err)
+			}
+			if domainErr.Code != "extraction_failed" {
+				t.Fatalf("code = %q, quería extraction_failed", domainErr.Code)
+			}
+			if domainErr.Reason != reason {
+				t.Fatalf("reason = %q, quería %q", domainErr.Reason, reason)
+			}
+		})
+	}
+
+	t.Run("motivo fuera del enum es fallo del extractor", func(t *testing.T) {
+		got := classifyExtractionReason(domain.ExtractionReason("inventado"))
+		if !errors.Is(got, domain.ErrExtractorUnavailable) {
+			t.Fatalf("classifyExtractionReason(inventado) = %v, quería ErrExtractorUnavailable", got)
+		}
+	})
+}
