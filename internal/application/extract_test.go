@@ -13,24 +13,28 @@ import (
 const validPDFBytes = "%PDF-1.7\ntexto del documento"
 
 type extractorStub struct {
-	called bool
-	result domain.Extraction
-	err    error
+	called     bool
+	documentID domain.DocumentID
+	result     domain.Extraction
+	err        error
 }
 
-func (s *extractorStub) Extract(context.Context, domain.IncomingDocument) (domain.Extraction, error) {
+func (s *extractorStub) Extract(_ context.Context, documentID domain.DocumentID, _ domain.IncomingDocument) (domain.Extraction, error) {
 	s.called = true
+	s.documentID = documentID
 	return s.result, s.err
 }
 
 type summarizerSpy struct {
-	called bool
-	result domain.Summary
-	err    error
+	called     bool
+	documentID domain.DocumentID
+	result     domain.Summary
+	err        error
 }
 
-func (s *summarizerSpy) Summarize(context.Context, string) (domain.Summary, error) {
+func (s *summarizerSpy) Summarize(_ context.Context, documentID domain.DocumentID, _ string) (domain.Summary, error) {
 	s.called = true
+	s.documentID = documentID
 	return s.result, s.err
 }
 
@@ -69,6 +73,9 @@ func TestExtractUseCasePublishesOriginalWithoutSummary(t *testing.T) {
 	}
 	if _, err := uuid.Parse(string(result.DocumentID)); err != nil {
 		t.Fatalf("DocumentID = %q, no es un UUID válido: %v", result.DocumentID, err)
+	}
+	if extractor.documentID != result.DocumentID {
+		t.Fatalf("el Extractor recibió document_id %q, quería %q", extractor.documentID, result.DocumentID)
 	}
 	if summarizer.called {
 		t.Fatal("llamó al Resumidor con summarize=false")
@@ -118,6 +125,10 @@ func TestExtractUseCasePublishesSummaryAfterOriginal(t *testing.T) {
 	}
 	if result.SummaryText != "resumen" || result.SummaryTimeMS != 8300 {
 		t.Fatalf("resumen en el resultado = %q/%d, quería resumen/8300", result.SummaryText, result.SummaryTimeMS)
+	}
+	if extractor.documentID != result.DocumentID || summarizer.documentID != result.DocumentID {
+		t.Fatalf("document_id desparejo entre workers y resultado: extractor=%q resumidor=%q resultado=%q",
+			extractor.documentID, summarizer.documentID, result.DocumentID)
 	}
 
 	if len(publisher.events) != 2 {
@@ -207,18 +218,47 @@ func TestExtractUseCasePublishesNothingWhenExtractionFails(t *testing.T) {
 
 func TestExtractUseCasePublishesNothingWhenSummaryFails(t *testing.T) {
 	extractor := &extractorStub{result: domain.Extraction{Text: "texto plano", Reason: domain.ReasonSuccess}}
-	summarizer := &summarizerSpy{err: domain.ErrSummaryFailed}
 	publisher := &publisherSpy{}
 
-	_, err := NewExtractUseCase(extractor, summarizer, publisher).Execute(context.Background(), domain.IncomingDocument{
-		Bytes:     []byte(validPDFBytes),
-		Summarize: true,
-	})
+	_, err := NewExtractUseCase(extractor, &summarizerSpy{err: domain.ErrSummaryFailed}, publisher).
+		Execute(context.Background(), domain.IncomingDocument{
+			Bytes:     []byte(validPDFBytes),
+			Summarize: true,
+		})
 
 	if !errors.Is(err, domain.ErrSummaryFailed) {
 		t.Fatalf("Execute() = %v, quería ErrSummaryFailed", err)
 	}
 	if len(publisher.events) != 0 {
 		t.Fatalf("publicó %d eventos, quería 0: un 502 no debe dejar nada ingerido", len(publisher.events))
+	}
+}
+
+func TestExtractUseCasePublishesNothingWhenSummaryIsEmpty(t *testing.T) {
+	cases := map[string]string{
+		"vacío":         "",
+		"solo espacios": "   ",
+		"solo saltos":   "\n\t\n",
+	}
+
+	for name, text := range cases {
+		t.Run(name, func(t *testing.T) {
+			extractor := &extractorStub{result: domain.Extraction{Text: "texto plano", Reason: domain.ReasonSuccess}}
+			summarizer := &summarizerSpy{result: domain.Summary{Text: text}}
+			publisher := &publisherSpy{}
+
+			_, err := NewExtractUseCase(extractor, summarizer, publisher).
+				Execute(context.Background(), domain.IncomingDocument{
+					Bytes:     []byte(validPDFBytes),
+					Summarize: true,
+				})
+
+			if !errors.Is(err, domain.ErrSummaryFailed) {
+				t.Fatalf("Execute() = %v, quería ErrSummaryFailed", err)
+			}
+			if len(publisher.events) != 0 {
+				t.Fatalf("publicó %d eventos, quería 0: un resumen vacío no se publica", len(publisher.events))
+			}
+		})
 	}
 }

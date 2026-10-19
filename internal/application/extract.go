@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,7 +41,9 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 		return domain.IngestResult{}, err
 	}
 
-	extraction, err := u.extractor.Extract(ctx, in)
+	documentID := domain.DocumentID(uuid.NewString())
+
+	extraction, err := u.extractor.Extract(ctx, documentID, in)
 	if err != nil {
 		return domain.IngestResult{}, err
 	}
@@ -48,13 +51,13 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 		return domain.IngestResult{}, err
 	}
 
-	summary, err := u.summarize(ctx, in.Summarize, extraction.Text)
+	summary, err := u.summarize(ctx, in.Summarize, documentID, extraction.Text)
 	if err != nil {
 		return domain.IngestResult{}, err
 	}
 
 	ing := ingestion{
-		documentID:    domain.DocumentID(uuid.NewString()),
+		documentID:    documentID,
 		checksum:      domain.NewChecksum(extraction.Text),
 		extraction:    extraction,
 		summary:       summary,
@@ -68,12 +71,21 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 	return ing.result(in.Filename), nil
 }
 
-// summarize resuelve el resumen solo si el cliente lo pidió; si no, devuelve un resumen vacío.
-func (u *ExtractUseCase) summarize(ctx context.Context, requested bool, text string) (domain.Summary, error) {
+// summarize resuelve el resumen solo si el cliente lo pidió; si no, devuelve un resumen vacío. Un
+// resumen sin contenido utilizable se trata como fallo del Resumidor: el contrato no admite
+// `summary` vacío (events.md).
+func (u *ExtractUseCase) summarize(ctx context.Context, requested bool, documentID domain.DocumentID, text string) (domain.Summary, error) {
 	if !requested {
 		return domain.Summary{}, nil
 	}
-	return u.summarizer.Summarize(ctx, text)
+	summary, err := u.summarizer.Summarize(ctx, documentID, text)
+	if err != nil {
+		return domain.Summary{}, err
+	}
+	if strings.TrimSpace(summary.Text) == "" {
+		return domain.Summary{}, domain.ErrSummaryFailed
+	}
+	return summary, nil
 }
 
 // publish publica `original` y, solo si el resumen se pidió, `summary_resolved` a continuación. El
