@@ -25,6 +25,10 @@
 
 | Red | Quién | Exposición |
 |---|---|---|
-| `public-net` | `traefik`, `orchestrator` | El cliente llega acá. |
-| `mired` | `orchestrator`, `extractor`, `summarizer`, `persister`, `redis` | Interna. |
+| `public-net` | `traefik-public`, `orchestrator` | El cliente llega acá. `traefik-public` termina TLS y aplica los límites del borde. |
+| `mired` | `traefik-internal`, `orchestrator`, `extractor`, `summarizer`, `persister`, `redis` | Interna. El tráfico entre el Orquestador y los workers pasa por `traefik-internal` (ADR-0005). |
 | `db-net` | `persister`, `mongodb` | Interna y sin salida a internet. |
+
+El Orquestador llama a los workers por hostname interno (`extractor.internal`, `summarizer.internal`,
+`persister.internal`), que resuelve a `traefik-internal` por alias de red. El puerto HTTP del Orquestador no se
+publica al host: sólo `traefik-public` publica `80`/`443` (ADR-0005).
