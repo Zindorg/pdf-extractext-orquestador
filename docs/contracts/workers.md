@@ -12,9 +12,10 @@ allá de esta página. No son la API pública (esa es `docs/contracts/openapi.ya
 
 - **Transporte:** HTTP/1.1, JSON utf-8. Sin gRPC ni streaming binario obligatorio: el texto extraído ya es
   texto, no hace falta un canal binario (ADR-0002). El Orquestador es el único cliente.
-- **Identificación:** el Orquestador no envía identificador propio en el cuerpo. El `document_id` no existe
-  aún en la llamada al Extractor (se genera antes), y no le dice nada al Resumidor: es una ida y vuelta
-  entre dos procesos sin estado compartido.
+- **Identificación:** el Orquestador manda su `document_id` en el cuerpo de las dos llamadas, como único
+  correlador (ADR-0004). Ni el Extractor ni el Resumidor lo usan para trabajar —no ven al cliente ni al
+  documento—, pero lo escriben en sus logs para poder enlazar su trabajo con la ingesta. No hay un
+  identificador de correlación aparte.
 - **Errores:** cualquier estado no `2xx` se traduce a un motivo. Si el motivo no se puede leer o no está en
   el enum, el Orquestador lo trata como un fallo del worker (ver §Extractor y §Resumidor).
 - **Reintentos:** 2 reintentos ante error de **red** (timeout, conexión rechazada, corte), con espera
@@ -35,6 +36,7 @@ paso 3).
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `document` | binary (stream) | El archivo recibido, reenviado sin tocar el disco (Zero-Disk). El cuerpo se reusa tal cual; no se parsea. |
+| `document_id` | string (UUID) | El identificador de la ingesta. Solo para correlación; el Extractor no lo persiste. |
 | `mime_type` | string | Tipo del documento **determinado por el Orquestador** a partir de la firma `%PDF-` del archivo, no de un valor declarado por el cliente (el cliente es comprometible). Solo PDF en el MVP (ADR-0008). |
 
 **Response `200`** — `application/json`:
@@ -117,5 +119,6 @@ Lo que depende de la implementación real de cada worker, y que **no** se puede 
 4. **`document_too_long` como único motivo del Resumidor.** Pueden aparecer más (ej. texto en idioma no
    soportado); se agregan al enum del Resumidor, que es abierto en la práctica aunque cerrado en este
    contrato.
-5. **`document_id` en el Resumidor.** Si el Resumidor quiere persistir una traza de qué pidió, necesita
-   saberlo; sino se quita. Es un campo de correlación, no de negocio.
+5. **`document_id` en los workers.** Decidido: viaja en las dos llamadas (Extractor y Resumidor) como
+   correlador, para poder enlazar los logs de cada worker con la ingesta (ADR-0004). Es un campo de
+   correlación, no de negocio: los workers no lo persisten ni lo devuelven.

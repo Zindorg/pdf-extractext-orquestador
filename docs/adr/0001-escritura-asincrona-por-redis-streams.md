@@ -99,7 +99,10 @@ la base, y elimina la propiedad que hace que el 202 sea barato.
 - **El hueco del documento invisible.** Si el proceso muere entre los dos `XADD`, el documento queda ingestado
   sin resumen y el cliente nunca recibe el `document_id`. Al reenviar, el Persistidor descarta por checksum
   duplicado y el cliente obtiene un `202` de un `document_id` que no existe. La ventana es de milisegundos y
-  cualquier flujo publicar-luego-acknowledger la tiene, pero no la tiene gratis.
+  cualquier flujo publicar-luego-acknowledger la tiene, pero no la tiene gratis. El mismo hueco aparece sin que
+  el proceso muera: si el primer `XADD` sale y el segundo (`summary_resolved`) falla —Redis no responde—, queda
+  un `original` publicado sin resumen y el cliente ve un `502` de una ingesta que sí entró. No hay compensación
+  (el Orquestador no borra mensajes), así que se trata del mismo caso con otra causa.
   - *Mitigación inmediata:* el contrato de lectura distingue el 404 transitorio del terminal mediante una regla
     con plazo, lo que corta el bucle de reintentos del cliente
     (`docs/contracts/openapi.yaml`).

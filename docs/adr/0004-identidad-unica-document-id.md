@@ -46,8 +46,9 @@ la deduplicación la resuelve el checksum. Confundir los dos es un error de dise
 el mismo identificador y una tendría que esperar a la otra.
 
 El `document_id` viaja en la respuesta `202`, en el header `X-Document-Id` de todas las respuestas de la
-petición, en el evento `original`, en el evento `summary_resolved`, y es el parámetro de todas las rutas de
-lectura y borrado. No hay un solo lugar del sistema donde el documento no se pueda nombrar con esta palabra.
+petición, en las dos llamadas a los workers (Extractor y Resumidor) como único correlador, en el evento
+`original`, en el evento `summary_resolved`, y es el parámetro de todas las rutas de lectura y borrado. No hay
+un solo lugar del sistema donde el documento no se pueda nombrar con esta palabra.
 
 ## Alternativas consideradas
 
