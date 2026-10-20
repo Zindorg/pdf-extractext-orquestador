@@ -46,6 +46,12 @@ type Deps struct {
 // NewRouter arma el router de gin con todas las rutas de openapi.yaml. El prefijo `/api/v1` se
 // conserva y no se reescribe (ADR-0005).
 func NewRouter(deps Deps) *gin.Engine {
+	// gin arranca en modo debug por defecto, que imprime rutas y avisos en cada arranque. El
+	// servicio es de producción: release salvo que los tests ya hayan fijado el modo.
+	if gin.Mode() == gin.DebugMode {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	router := gin.New()
 	if deps.Logger == nil {
 		deps.Logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
