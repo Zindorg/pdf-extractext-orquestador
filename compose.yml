@@ -1,0 +1,10 @@
+# Compose paraguas: incluye los tres despliegues del Orquestador (orquestador, Redis y las dos
+# instancias de Traefik). Cada uno vive en su propio archivo para poder levantarse por separado y
+# para que el borde y el bus tengan ciclos de vida independientes del servicio.
+#
+# Requiere las redes externas `public-net` y `mired`:
+#   docker network create public-net && docker network create mired
+include:
+  - compose.orchestrator.yml
+  - compose.redis.yml
+  - compose.traefik.yml

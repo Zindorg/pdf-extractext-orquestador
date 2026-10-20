@@ -1,0 +1,33 @@
+# traefik-public: borde público. Sus cuatro trabajos son terminar TLS, enrutar por host y path,
+# agregar cabeceras de enrutamiento y aplicar límites de tasa y tamaño (ADR-0005). No reescribe el
+# prefijo /api/v1 ni decide códigos de error: el servicio es el dueño de su API.
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: public-net
+
+api:
+  dashboard: false
+
+log:
+  level: INFO
+
+accessLog:
+  format: json
+
+# TLS con resolución automática de certificados. Se deja declarado para que el despliegue real solo
+# cambie `PUBLIC_HOST` y active el resolver vía `PUBLIC_TLS`.
+certificatesResolvers:
+  le:
+    acme:
+      email: admin@example.com
+      storage: /acme/acme.json
+      httpChallenge:
+        entryPoint: web

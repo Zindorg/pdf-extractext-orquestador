@@ -1,0 +1,58 @@
+# Orquestador: punto de entrada público. No publica puertos al host: solo `traefik-public` expone
+# 80/443, y por eso el borde es el único camino (ADR-0005). Vive en `public-net` (borde) y `mired`
+# (workers, Redis y Persistidor), nunca en `db-net`.
+services:
+  orchestrator:
+    image: pdf-extractext-orquestador:v${VERSION}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orchestrator
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - HTTP_PORT=8080
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - EXTRACTOR_URL=http://extractor.internal
+      - SUMMARIZER_URL=http://summarizer.internal
+      - PERSISTER_URL=http://persister.internal
+      - REDIS_ADDR=redis:6379
+      - STREAM_NAME=${STREAM_NAME:-document-events}
+      - MAX_DOCUMENT_BYTES=${MAX_DOCUMENT_BYTES:-10485760}
+      - EXTRACTOR_TIMEOUT=${EXTRACTOR_TIMEOUT:-30s}
+      - SUMMARIZER_TIMEOUT=${SUMMARIZER_TIMEOUT:-120s}
+      - EXTRACT_MAX_IN_FLIGHT=${EXTRACT_MAX_IN_FLIGHT:-16}
+      - SUMMARY_MAX_IN_FLIGHT=${SUMMARY_MAX_IN_FLIGHT:-4}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - "/etc/localtime:/etc/localtime:ro"
+      - "/etc/timezone:/etc/timezone:ro"
+    networks:
+      - public-net
+      - mired
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=public-net"
+      - "traefik.http.routers.orch.rule=Host(`${PUBLIC_HOST}`) && PathPrefix(`/api/v1`)"
+      - "traefik.http.routers.orch.entrypoints=web,websecure"
+      - "traefik.http.routers.orch.tls=${PUBLIC_TLS:-false}"
+      - "traefik.http.services.orch.loadbalancer.server.port=8080"
+      - "traefik.http.routers.orch.middlewares=orch-ratelimit@docker,orch-maxbody@docker"
+      # El borde impone su propio límite de tasa (ADR-0007): el servicio no lleva el registro de
+      # peticiones que necesitaría para decidir un límite por cliente de forma consistente.
+      - "traefik.http.middlewares.orch-ratelimit.ratelimit.average=${RATE_LIMIT_AVERAGE:-100}"
+      - "traefik.http.middlewares.orch-ratelimit.ratelimit.burst=${RATE_LIMIT_BURST:-200}"
+      # Techo del cuerpo en el borde: rechaza antes de consumir memoria y CPU en el servicio.
+      - "traefik.http.middlewares.orch-maxbody.buffering.maxRequestBodyBytes=${MAX_DOCUMENT_BYTES:-10485760}"
+    healthcheck:
+      test: ["CMD", "/app/server", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  public-net:
+    external: true
+  mired:
+    external: true

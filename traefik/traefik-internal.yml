@@ -1,0 +1,21 @@
+# traefik-internal: enruta el tráfico del Orquestador hacia los workers por hostname interno
+# (`extractor.internal`, `summarizer.internal`, `persister.internal`) sobre `mired` (ADR-0005). No
+# publica puertos al host y no es una segunda puerta pública: su rol es el enrutamiento interno.
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: mired
+
+api:
+  dashboard: false
+
+log:
+  level: INFO
+
+accessLog:
+  format: json

@@ -1,0 +1,26 @@
+# Redis Streams: el bus de eventos donde el Orquestador publica `original` y `summary_resolved`
+# (ADR-0001). Vive solo en `mired`: la base del Persistidor (`db-net`) le es inaccesible al
+# Orquestador, y el bus no se expone al público.
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - "redis-data:/data"
+      - "/etc/localtime:/etc/localtime:ro"
+      - "/etc/timezone:/etc/timezone:ro"
+    networks:
+      - mired
+    labels:
+      - "traefik.enable=false"
+
+networks:
+  mired:
+    external: true
+
+volumes:
+  redis-data:

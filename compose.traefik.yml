@@ -1,0 +1,52 @@
+# Dos instancias de Traefik con roles separados (ADR-0005). Ninguna es dueña de la API: reenvían
+# sin reescribir el prefijo ni decidir códigos de error.
+#
+# - traefik-public: borde público. Termina TLS, enruta por host+path y aplica límites de tasa y
+#   tamaño. Es el único que publica puertos al host.
+# - traefik-internal: enruta el tráfico del Orquestador hacia los workers por hostname interno
+#   (`*.internal`) sobre `mired`. No publica puertos al host.
+services:
+  traefik-public:
+    image: traefik:v3.3
+    container_name: traefik-public
+    restart: unless-stopped
+    command:
+      - --configFile=/etc/traefik/traefik-public.yml
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./traefik/traefik-public.yml:/etc/traefik/traefik-public.yml:ro"
+      - "traefik-public-acme:/acme"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - public-net
+    labels:
+      - "traefik.enable=false"
+
+  traefik-internal:
+    image: traefik:v3.3
+    container_name: traefik-internal
+    restart: unless-stopped
+    command:
+      - --configFile=/etc/traefik/traefik-internal.yml
+    volumes:
+      - "./traefik/traefik-internal.yml:/etc/traefik/traefik-internal.yml:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      mired:
+        aliases:
+          - extractor.internal
+          - summarizer.internal
+          - persister.internal
+    labels:
+      - "traefik.enable=false"
+
+networks:
+  public-net:
+    external: true
+  mired:
+    external: true
+
+volumes:
+  traefik-public-acme:
