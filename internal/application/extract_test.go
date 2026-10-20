@@ -40,11 +40,12 @@ func (s *summarizerSpy) Summarize(_ context.Context, documentID domain.DocumentI
 
 type publisherSpy struct {
 	events []domain.Event
+	err    error
 }
 
 func (s *publisherSpy) Publish(_ context.Context, event domain.Event) error {
 	s.events = append(s.events, event)
-	return nil
+	return s.err
 }
 
 func TestExtractUseCasePublishesOriginalWithoutSummary(t *testing.T) {
