@@ -34,15 +34,23 @@ var (
 	ErrDocumentNotFound     = &Error{Code: "document_not_found", Message: "el documento no existe"}
 	ErrSummaryPending       = &Error{Code: "summary_pending", Message: "el resumen todavía no está resuelto"}
 	ErrChecksumConflict     = &Error{Code: "checksum_conflict", Message: "el checksum ya está ocupado por otro documento"}
+
+	// ErrSummaryAlreadyResolved lo produce solo el Orquestador: el Persistidor nunca lo contesta.
+	// Rechaza pedir otra vez un resumen que ya está resuelto.
+	ErrSummaryAlreadyResolved = &Error{Code: "summary_already_resolved", Message: "el documento ya tiene un resumen resuelto"}
+	// ErrSummaryNotAvailable es un código del Persistidor (delta-persister.md): dice que el documento
+	// no tiene resumen y no va a tenerlo, distinto de que todavía esté en camino.
+	ErrSummaryNotAvailable = &Error{Code: "summary_not_available", Message: "el documento no tiene resumen"}
 )
 
 // publicErrors indexa los errores por su `code` público (openapi.yaml). El Persistidor comparte este
 // vocabulario (delta-persister.md), así que su código se traduce sin re-inventar la taxonomía.
 var publicErrors = map[string]*Error{
-	ErrInvalidRequest.Code:   ErrInvalidRequest,
-	ErrDocumentNotFound.Code: ErrDocumentNotFound,
-	ErrSummaryPending.Code:   ErrSummaryPending,
-	ErrChecksumConflict.Code: ErrChecksumConflict,
+	ErrInvalidRequest.Code:      ErrInvalidRequest,
+	ErrDocumentNotFound.Code:    ErrDocumentNotFound,
+	ErrSummaryPending.Code:      ErrSummaryPending,
+	ErrChecksumConflict.Code:    ErrChecksumConflict,
+	ErrSummaryNotAvailable.Code: ErrSummaryNotAvailable,
 }
 
 // FromCode devuelve el error tipado de un código público, o nil si no pertenece al vocabulario. Un

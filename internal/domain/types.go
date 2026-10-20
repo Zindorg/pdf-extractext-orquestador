@@ -64,6 +64,16 @@ type Summary struct {
 	TimeMS int64
 }
 
+// SummaryRequestResult es la salida del resumen a demanda. `ProcessingTimeMS` mide esta llamada
+// entera —el resumen más las lecturas por proxy—, a diferencia del total de una admisión, que suma
+// extracción y resumen (openapi.yaml, esquema `SummaryAccepted`).
+type SummaryRequestResult struct {
+	DocumentID       DocumentID
+	Summary          string
+	SummaryTimeMS    int64
+	ProcessingTimeMS int64
+}
+
 // IngestResult es la salida del caso de uso de ingesta. Es una representación de dominio: el DTO
 // HTTP (ExtractAccepted) se construye en la capa api. No lleva el tiempo total, que es la suma de
 // las dos patas y se calcula donde se necesite.
