@@ -143,6 +143,19 @@ func TestProxyHandlerRejectsInvalidDocumentID(t *testing.T) {
 	}
 }
 
+func TestCorrelationHeaderPresentOnProxiedRead(t *testing.T) {
+	proxy := &proxyUseCaseStub{resp: domain.PersisterResponse{StatusCode: 200, Body: []byte("{}")}}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/documents/"+testDocumentID, nil)
+	rec := httptest.NewRecorder()
+
+	newTestRouter(&extractUseCaseStub{}, &summaryUseCaseStub{}, proxy).ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Document-Id"); got != testDocumentID {
+		t.Fatalf("X-Document-Id = %q, quería %q: lo agrega el middleware de correlación", got, testDocumentID)
+	}
+}
+
 func TestDocumentIDHeaderPresent(t *testing.T) {
 	extract := &extractUseCaseStub{result: domain.IngestResult{
 		DocumentID:     testDocumentID,
