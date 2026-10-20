@@ -1,0 +1,88 @@
+# Mocks de workers para el smoke local end-to-end (fase7 #20). NO se usan en producción.
+#
+# Se monta ENCIMA de la topología real para reemplazar a los tres vecinos que todavía no existen
+# (Extractor, Resumidor, Persistidor). El Orquestador no cambia ni una línea: le habla a los mismos
+# `*.internal` y al mismo Redis; acá cambia quién está del otro lado.
+#
+#   docker network create public-net
+#   docker network create mired
+#   docker compose -f compose.yml -f compose.mocks.yml up --build
+#
+# Reutiliza el Redis real (compose.redis.yml) y el `traefik-internal` real (compose.traefik.yml): el
+# enrutamiento por hostname interno se prueba tal cual es. Solo se agregan los tres servicios mock y
+# se registran en `traefik-internal` con sus labels.
+services:
+  extractor-mock:
+    image: pdf-extractext-orquestador-extractor-mock:v${VERSION}
+    build:
+      context: .
+      dockerfile: mocks/Dockerfile
+      args:
+        CMD: extractor
+    container_name: extractor-mock
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - MOCK_ADDR=:8080
+      - EXTRACTOR_MOCK_DELAY_MS=${EXTRACTOR_MOCK_DELAY_MS:-0}
+    networks:
+      - mired
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mired"
+      # El Orquestador pide `http://extractor.internal/extract`; traefik-internal enruta por Host.
+      - "traefik.http.routers.extractor-mock.rule=Host(`extractor.internal`)"
+      - "traefik.http.routers.extractor-mock.entrypoints=web"
+      - "traefik.http.services.extractor-mock.loadbalancer.server.port=8080"
+      - "traefik.http.routers.extractor-mock.service=extractor-mock"
+
+  summarizer-mock:
+    image: pdf-extractext-orquestador-mocks:v${VERSION}
+    build:
+      context: .
+      dockerfile: mocks/Dockerfile
+      args:
+        CMD: summarizer
+    container_name: summarizer-mock
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - MOCK_ADDR=:8080
+      - SUMMARIZER_MOCK_DELAY_MS=${SUMMARIZER_MOCK_DELAY_MS:-0}
+    networks:
+      - mired
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mired"
+      - "traefik.http.routers.summarizer-mock.rule=Host(`summarizer.internal`)"
+      - "traefik.http.routers.summarizer-mock.entrypoints=web"
+      - "traefik.http.services.summarizer-mock.loadbalancer.server.port=8080"
+      - "traefik.http.routers.summarizer-mock.service=summarizer-mock"
+
+  persister-mock:
+    image: pdf-extractext-orquestador-mocks:v${VERSION}
+    build:
+      context: .
+      dockerfile: mocks/Dockerfile
+      args:
+        CMD: persister
+    container_name: persister-mock
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - MOCK_ADDR=:8083
+      - REDIS_ADDR=redis:6379
+      - STREAM_NAME=${STREAM_NAME:-document-events}
+    networks:
+      - mired
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mired"
+      - "traefik.http.routers.persister-mock.rule=Host(`persister.internal`)"
+      - "traefik.http.routers.persister-mock.entrypoints=web"
+      - "traefik.http.services.persister-mock.loadbalancer.server.port=8083"
+      - "traefik.http.routers.persister-mock.service=persister-mock"
+
+networks:
+  mired:
+    external: true
