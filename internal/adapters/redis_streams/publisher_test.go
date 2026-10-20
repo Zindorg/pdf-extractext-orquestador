@@ -17,6 +17,7 @@ type fakeAdder struct {
 	key     string
 	payload []byte
 	err     error
+	pingErr error
 }
 
 func (f *fakeAdder) XAdd(_ context.Context, stream, key string, payload []byte) error {
@@ -24,6 +25,8 @@ func (f *fakeAdder) XAdd(_ context.Context, stream, key string, payload []byte) 
 	f.stream, f.key, f.payload = stream, key, payload
 	return f.err
 }
+
+func (f *fakeAdder) Ping(_ context.Context) error { return f.pingErr }
 
 func (f *fakeAdder) Close() error { return nil }
 
@@ -247,3 +250,17 @@ func TestPublishPropagatesStreamError(t *testing.T) {
 type unknownEvent struct{}
 
 func (unknownEvent) isEvent() {}
+
+// Ready reporta si el stream es alcanzable: el readiness responde 503 cuando Redis está caído,
+// porque sin stream no se puede publicar y admitir documentos solo produciría errores.
+func TestReadyReflectsRedisReachability(t *testing.T) {
+	reachable := newPublisher(&fakeAdder{})
+	if err := reachable.Ready(t.Context()); err != nil {
+		t.Fatalf("Ready() = %v con Redis alcanzable, quería nil", err)
+	}
+
+	unreachable := newPublisher(&fakeAdder{pingErr: errors.New("connection refused")})
+	if err := unreachable.Ready(t.Context()); err == nil {
+		t.Fatal("Ready() = nil con Redis caído, quería error")
+	}
+}

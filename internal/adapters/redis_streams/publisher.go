@@ -28,6 +28,7 @@ type Publisher struct {
 // repo no levanta un Redis para probar al productor.
 type xAdder interface {
 	XAdd(ctx context.Context, stream, key string, payload []byte) error
+	Ping(ctx context.Context) error
 	Close() error
 }
 
@@ -51,6 +52,12 @@ func (p *Publisher) Publish(ctx context.Context, event domain.Event) error {
 // Close libera la conexión de Redis para el apagado ordenado del proceso.
 func (p *Publisher) Close() error {
 	return p.redis.Close()
+}
+
+// Ready reporta si el stream es alcanzable. Lo usa el readiness del servicio: sin Redis no se puede
+// publicar, y admitir documentos solo produciría errores.
+func (p *Publisher) Ready(ctx context.Context) error {
+	return p.redis.Ping(ctx)
 }
 
 // encode arma el mensaje del stream. El JSON del evento va entero en el campo `payload` para
@@ -133,5 +140,7 @@ func (r *redisXAdder) XAdd(ctx context.Context, stream, key string, payload []by
 		Values: map[string]any{"document_id": key, "payload": string(payload)},
 	}).Err()
 }
+
+func (r *redisXAdder) Ping(ctx context.Context) error { return r.client.Ping(ctx).Err() }
 
 func (r *redisXAdder) Close() error { return r.client.Close() }
