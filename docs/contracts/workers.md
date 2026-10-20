@@ -22,7 +22,7 @@ allá de esta página. No son la API pública (esa es `docs/contracts/openapi.ya
   creciente. **Cero reintentos ante un error de validación** (`4xx`): re-enviar el mismo payload va a fallar
   igual, y reintentar no es gratis (ocupa la puerta de concurrencia).
 - **Timeouts:** el del Extractor es acotado (misma escala que la extracción); el del Resumidor es holgado,
-  porque el modelo local es serializado (se explica en `internal/adapters/http_summarizer/client.go`).
+  porque el modelo local es serializado (se explica en `internal/adapters/http_summarizer/summarizer_client.go`).
 
 ## Extractor
 

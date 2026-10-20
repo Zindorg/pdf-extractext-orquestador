@@ -30,6 +30,7 @@ campos, cambiar un nombre de red o renombrar un header; nada vuelve a interpreta
 | 10 | Prefijo de rutas: la API interna sigue montada `/api/v1`, **sin reescritura** por el proxy (*strip-prefix off*) | ver contradicción §10 vs §13 abajo | ADR-0005 · `openapi.yaml` | §10 tabla y §13 healthcheck |
 | 11 | Nueva ruta pública del Orquestador `POST /api/v1/documents/{document_id}/summary` | **aditivo (cero cambios en este repo)** | ADR-0006 · `openapi.yaml` §summary | ninguno: usa GET `/documents/{id}` y GET `/download/original` de §10 |
 | 12 | `409` en `GET /download/summary` cuando el resumen está `PENDING` ya está en §10; se confirma y se alinea el `code` a `summary_pending` del Orquestador | **cosmético** | `openapi.yaml` ErrorCode | §10, fila de download/summary |
+| 13 | El `XADD` lleva **dos fields**: `document_id` (la clave del mensaje) y `payload` con el JSON entero del evento, en vez de un field por atributo | **aditivo** | `events.md` §Convenciones | §9: el mensaje se lee del field `payload` y se parsea como JSON |
 
 \* El ítem 2 es rompe y aditivo a la vez: *rompe* porque el mensaje `original` cambia de shape (sale
 `processing_time_ms`, entra `extraction_time_ms`) y requiere migrar el consumidor al nuevo nombre; *aditivo*
@@ -45,7 +46,7 @@ porque no cambia la semántica de los campos que ya existían.
 
 **Qué se corrige:** los endpoints internos viven bajo `/api/v1` (§10). La *tabla* de §10 debería listar las
 rutas con el prefijo, para que ambas secciones coincidan y para que la allowlist del proxy del Orquestador
-(`internal/api/proxy.go`) se escriba contra el mismo string que el router del Persistidor. La regla de
+(`internal/application/proxy.go`) se escriba contra el mismo string que el router del Persistidor. La regla de
 transparencia es: el proxy **no reescribe** —el prefijo `/api/v1` se conserva tal cual (ADR-0005)—.
 
 ## Lo que NO cambia en el Persistidor
@@ -69,3 +70,5 @@ transparencia es: el proxy **no reescribe** —el prefijo `/api/v1` se conserva 
    quiere exponer—.
 4. Que el `409` de "resumen aún `PENDING`" en `GET /download/summary` siga existiendo; el Orquestador lo
    traduce a su propio `code: summary_pending`.
+5. Que cada mensaje se lea del field **`payload`** —un JSON con los tipos que `events.md` declara— y que el
+   `document_id` venga además como field propio, para identificar el mensaje sin parsear el cuerpo.

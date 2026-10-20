@@ -44,8 +44,8 @@ con ella: acotan el daño de un abuso, pero no impiden que un tercero use el ser
 - **Zero-Disk.** El contenido vive en RAM durante la petición y desaparece al terminar. Un abuso no deja rastro
   en el sistema de archivos, lo que acota el daño a memoria y CPU.
 - **Ventana de ejecución acotada.** El resumen tiene un timeout deliberadamente holgado
-  (`internal/adapters/http_summarizer/client.go`) porque los modelos serializan lento, pero está acotado: una
-  subida no puede retener recursos indefinidamente.
+  (`internal/adapters/http_summarizer/summarizer_client.go`) porque los modelos serializan lento, pero está
+  acotado: una subida no puede retener recursos indefinidamente.
 
 Los topes de concurrencia son **por réplica**, no globales. El agregado multiplica el total, así que un
 deployment con muchas réplicas admite proporcionalmente más. Es la misma decisión de ADR-0001 aplicada a otro

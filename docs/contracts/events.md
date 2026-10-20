@@ -12,9 +12,16 @@ cola de mensajes rechazados— está en `ARCHITECTURE_REPOSITORIES.md` §9 y no 
 | Consumidores | Persistidor, grupo `documents-persister` |
 | Transporte | HTTP/1.1 + JSON, no Protobuf (ADR-0002) |
 | Clave del mensaje | `document_id`, para que dos eventos del mismo documento no se intercalen |
+| Campos del `XADD` | `document_id` como field propio, y `payload` con el JSON entero del evento |
 
 Un solo productor es una decisión, no una casualidad: hace imposible la condición de carrera entre dos
 escritores sobre el mismo documento, que es lo que obliga al consumidor a reintentar con espera creciente.
+
+**Por qué el JSON va entero en un solo field.** Un field de Redis es texto: si cada atributo del evento
+fuera un field aparte, `extraction_time_ms`, `summary_time_ms` y `summary_requested` llegarían como strings
+y el consumidor tendría que re-convertirlos uno por uno. Dentro de `payload` viajan con los tipos que la
+tabla de cada evento declara, y el decode es un solo paso para los dos eventos. El `document_id` se repite
+fuera de `payload` para identificar el mensaje sin parsear el cuerpo: es la clave del mensaje.
 
 ### Orden de publicación
 

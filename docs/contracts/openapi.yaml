@@ -177,7 +177,7 @@ paths:
 
         **El delta con el Persistidor es cero**: usa las dos rutas de arriba, que ya existen en
         `ARCHITECTURE_REPOSITORIES.md` §10. Y no es una entrada nueva de la allowlist del proxy
-        (`internal/api/proxy.go`): es un caso de uso del Orquestador, así que la allowlist no crece.
+        (`internal/application/proxy.go`): es un caso de uso del Orquestador, así que la allowlist no crece.
 
         Dos consecuencias que conviene tener presentes:
 
