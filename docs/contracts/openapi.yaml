@@ -223,13 +223,24 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { code: document_not_found, message: "no existe el documento" }
         "409":
-          description: El documento ya tiene un resumen resuelto. No se vuelve a pedir.
+          description: |
+            El resumen ya no se puede pedir en este estado:
+            - `summary_already_resolved`: el documento ya tiene un resumen resuelto.
+            - `summary_pending`: el resumen ya fue pedido y aún está en proceso.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-              example:
-                code: summary_already_resolved
-                message: "el documento ya tiene un resumen"
+              examples:
+                already_resolved:
+                  summary: Ya resuelto
+                  value:
+                    code: summary_already_resolved
+                    message: "el documento ya tiene un resumen"
+                pending:
+                  summary: En proceso
+                  value:
+                    code: summary_pending
+                    message: "el resumen ya fue pedido y está en proceso"
         "429":
           description: Se superó el tope de concurrencia de resumen de esta réplica.
           headers:
