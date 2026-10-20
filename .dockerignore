@@ -1,0 +1,32 @@
+# El contexto de build no necesita nada más que el código Go. Mantener el contexto chico acelera el
+# build y evita filtrar secretos o artefactos locales a la imagen.
+.git/
+.gitignore
+.github/
+
+# Documentación y material de trabajo
+*.md
+docs/
+tasks/
+analisis-*.md
+CONTEXT.md
+CONTEXT-MAP.md
+ARCHITECTURE_*.md
+Especificaciones_*.md
+LICENSE
+
+# Despliegue: la imagen no contiene composes ni configs de Traefik
+Dockerfile
+.dockerignore
+compose*.yml
+traefik/
+mocks/
+.env
+.env.*
+
+# Artefactos de Go
+*.test
+*.out
+coverage.*
+bin/
+server
