@@ -15,14 +15,14 @@ ARCHITECTURE_*.md
 Especificaciones_*.md
 LICENSE
 
-# Despliegue: la imagen no contiene composes ni configs de Traefik
+# Despliegue: la imagen del servicio no contiene composes ni configs de Traefik. `mocks/` sí entra
+# porque el Dockerfile de los mocks comparte este contexto (mocks/Dockerfile lo copia y compila).
 Dockerfile
 .dockerignore
 compose*.yml
 traefik/
-mocks/
 .env
-.env.*
+.env.
 
 # Artefactos de Go
 *.test

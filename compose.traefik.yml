@@ -7,9 +7,14 @@
 #   (`*.internal`) sobre `mired`. No publica puertos al host.
 services:
   traefik-public:
-    image: traefik:v3.3
+    image: traefik:v3.6
     container_name: traefik-public
     restart: unless-stopped
+    environment:
+      # El cliente del provider docker de Traefik negocia una versión de API que puede quedar por
+      # debajo del mínimo del daemon (en daemons recientes, >=1.40). Fijarla evita que el provider no
+      # descubra contenedores y todo devuelva 404.
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.44}
     command:
       - --configFile=/etc/traefik/traefik-public.yml
     ports:
@@ -25,9 +30,11 @@ services:
       - "traefik.enable=false"
 
   traefik-internal:
-    image: traefik:v3.3
+    image: traefik:v3.6
     container_name: traefik-internal
     restart: unless-stopped
+    environment:
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.44}
     command:
       - --configFile=/etc/traefik/traefik-internal.yml
     volumes:
