@@ -28,10 +28,39 @@ import (
 const shutdownGrace = 15 * time.Second
 
 func main() {
+	// La imagen distroless no trae shell ni cliente HTTP, así que el healthcheck del contenedor
+	// reusa este mismo binario como sonda: `server healthcheck` consulta /health y sale según el
+	// resultado.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		if err := healthcheck(); err != nil {
+			fmt.Fprintln(os.Stderr, "healthcheck:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error fatal:", err)
 		os.Exit(1)
 	}
+}
+
+// healthcheck consulta el liveness del propio proceso. No valida dependencias: para eso está /ready.
+func healthcheck() error {
+	port := os.Getenv("HTTP_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/health")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/health devolvió %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // run arma todo y bloquea hasta que llega una señal. Devuelve un error solo si el arranque o el
