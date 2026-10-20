@@ -30,7 +30,27 @@ var (
 	ErrUnsupportedMediaType = &Error{Code: "unsupported_media_type", Message: "el contenido no comienza con la firma %PDF-"}
 	ErrExtractorUnavailable = &Error{Code: "extractor_unavailable", Message: "el Extractor no está disponible"}
 	ErrSummaryFailed        = &Error{Code: "summary_failed", Message: "el Resumidor no respondió"}
+	ErrInvalidRequest       = &Error{Code: "invalid_request", Message: "la petición no es válida"}
+	ErrDocumentNotFound     = &Error{Code: "document_not_found", Message: "el documento no existe"}
+	ErrSummaryPending       = &Error{Code: "summary_pending", Message: "el resumen todavía no está resuelto"}
+	ErrChecksumConflict     = &Error{Code: "checksum_conflict", Message: "el checksum ya está ocupado por otro documento"}
 )
+
+// publicErrors indexa los errores por su `code` público (openapi.yaml). El Persistidor comparte este
+// vocabulario (delta-persister.md), así que su código se traduce sin re-inventar la taxonomía.
+var publicErrors = map[string]*Error{
+	ErrInvalidRequest.Code:   ErrInvalidRequest,
+	ErrDocumentNotFound.Code: ErrDocumentNotFound,
+	ErrSummaryPending.Code:   ErrSummaryPending,
+	ErrChecksumConflict.Code: ErrChecksumConflict,
+}
+
+// FromCode devuelve el error tipado de un código público, o nil si no pertenece al vocabulario. Un
+// código desconocido no se mapea por aproximación: responder con un significado que nadie declaró
+// es peor que no entender la respuesta.
+func FromCode(code string) *Error {
+	return publicErrors[code]
+}
 
 // NewExtractionFailed construye el error 422 a partir de un motivo del enum del Extractor.
 func NewExtractionFailed(reason ExtractionReason) *Error {

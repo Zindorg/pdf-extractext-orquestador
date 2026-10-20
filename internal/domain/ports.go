@@ -26,3 +26,28 @@ type Summarizer interface {
 type EventPublisher interface {
 	Publish(ctx context.Context, event Event) error
 }
+
+// PersisterRequest es una petición de lectura o borrado hacia el Persistidor. `Path` y `RawQuery`
+// van tal como los declaró el cliente, sin reescribir el prefijo `/api/v1` (ADR-0005, delta
+// #10): la allowlist de rutas vive en el caso de uso, no acá.
+type PersisterRequest struct {
+	Method   string
+	Path     string
+	RawQuery string
+}
+
+// PersisterResponse es la respuesta cruda del Persistidor: el proxy es transparente, así que status,
+// cabeceras y cuerpo vuelven al cliente sin interpretar. La única lectura que se hace del cuerpo es
+// para traducir un error (un `4xx` no se reenvía tal cual).
+type PersisterResponse struct {
+	StatusCode int
+	Header     map[string][]string
+	Body       []byte
+}
+
+// PersisterProxy reenvía peticiones al Persistidor. Un `4xx` que el Persistidor reporta con un
+// código del vocabulario público sale como error de dominio tipado; un fallo de transporte o un
+// estado no previsto sale como error sin tipar y la capa api lo responde `500`.
+type PersisterProxy interface {
+	Do(ctx context.Context, req PersisterRequest) (PersisterResponse, error)
+}
