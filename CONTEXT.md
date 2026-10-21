@@ -102,7 +102,9 @@
 documento puede estar `INGESTED` con el resumen en cualquiera de los cuatro estados, y un documento `AVAILABLE`
 puede haber sido solicitado con `summarize=false` y quedarse en `NOT_REQUESTED` para siempre.
 
-La API de lectura expone los dos ejes por separado precisamente para que el cliente no tenga que inferir. En
-cambio, el `Status` único que el Persistidor guarda (`PENDING` / `COMPLETED`) responde a otra pregunta: si el
-documento tiene su resumen presente o no. No es contradicción con este glosario: son dos preguntas distintas,
-con dos consumidoras distintas.
+La API de lectura expone los dos ejes por separado cuando aplica. En particular, la respuesta de admisión
+(`ExtractAccepted`) expone `delivery_status` (`INGESTED` en el momento de la respuesta), mientras que la API
+de consulta/lectura (`GET /documents/...`) se centra en `summary_status` y el contenido. En cambio, el
+`Status` único que el Persistidor guarda (`PENDING` / `COMPLETED`) responde a otra pregunta: si el documento
+tiene su resumen presente o no. No es contradicción con este glosario: son dos preguntas distintas, con dos
+consumidoras distintas.

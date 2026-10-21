@@ -75,6 +75,7 @@ func NewRouter(deps Deps) *gin.Engine {
 func registerRoutes(router *gin.Engine, deps Deps) {
 	router.GET("/health", handleHealth)
 	router.GET("/ready", handleReady(deps.Ready))
+	router.GET("/api/v1/health", handleHealth)
 
 	withID := router.Group("/api/v1/documents/:document_id", validateDocumentID)
 	withID.GET("", handleProxy(deps.Proxy))

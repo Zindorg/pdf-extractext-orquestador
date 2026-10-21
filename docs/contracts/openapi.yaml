@@ -776,7 +776,10 @@ components:
 
         No expone los identificadores internos del Persistidor: el `_id` de MongoDB es una clave de
         almacenamiento y no forma parte de la API. El identificador público es `document_id` (ADR-0004).
-      required: [document_id, delivery_status, summary_status, extracted_text]
+
+        La lectura no expone `delivery_status`: ese eje solo aparece en la respuesta de admisión
+        (`ExtractAccepted`), mientras que la consulta se centra en `summary_status` y el contenido.
+      required: [document_id, summary_status, extracted_text]
       properties:
         document_id:
           type: string
@@ -796,8 +799,6 @@ components:
         summary:
           type: [string, "null"]
           description: El resumen, o `null` si el documento no tiene ninguno.
-        delivery_status:
-          allOf: [{ $ref: "#/components/schemas/DeliveryStatus" }]
         summary_status:
           $ref: "#/components/schemas/SummaryStatus"
         processing_time_ms:
@@ -842,3 +843,20 @@ components:
           type: integer
         page_size:
           type: integer
+
+  /api/v1/health:
+    get:
+      tags: [Salud]
+      summary: Estado de salud (accesible vía borde público)
+      responses:
+        "200":
+          description: Servicio sano
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
