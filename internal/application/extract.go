@@ -16,11 +16,12 @@ type ExtractUseCase struct {
 	extractor  domain.Extractor
 	summarizer domain.Summarizer
 	publisher  domain.EventPublisher
+	persister  domain.PersisterProxy
 }
 
 // NewExtractUseCase arma el caso de uso con sus tres colaboradores.
-func NewExtractUseCase(extractor domain.Extractor, summarizer domain.Summarizer, publisher domain.EventPublisher) *ExtractUseCase {
-	return &ExtractUseCase{extractor: extractor, summarizer: summarizer, publisher: publisher}
+func NewExtractUseCase(extractor domain.Extractor, summarizer domain.Summarizer, publisher domain.EventPublisher, persister domain.PersisterProxy) *ExtractUseCase {
+	return &ExtractUseCase{extractor: extractor, summarizer: summarizer, publisher: publisher, persister: persister}
 }
 
 // ingestion agrupa lo ya resuelto de una ingesta —identidad, texto y resumen— para no arrastrar
@@ -56,6 +57,25 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 		return domain.IngestResult{}, err
 	}
 
+	checksum := domain.NewChecksum(extraction.Text)
+	// Duplicado: consulta por checksum antes de resumir/publicar. El lookup no es atómico con la
+	// publicación; la garantía real es el índice único parcial del Persistidor (events.md).
+	if u.persister != nil {
+		if existing, found, err := u.persister.FindActiveByChecksum(ctx, checksum); err == nil && found {
+			return domain.IngestResult{
+				DocumentID:       existing.DocumentID,
+				Filename:         in.Filename,
+				Checksum:         checksum,
+				DeliveryStatus:   domain.DeliveryAvailable,
+				SummaryStatus:    existing.SummaryStatus,
+				SummaryText:      existing.Summary,
+				SummaryTimeMS:    0,
+				ExtractionTimeMS: extraction.TimeMS,
+				Warnings:         extraction.Warnings,
+			}, nil
+		}
+	}
+
 	summary, err := u.summarize(ctx, in.Summarize, documentID, extraction.Text)
 	if err != nil {
 		return domain.IngestResult{}, err
@@ -63,7 +83,7 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 
 	ing := ingestion{
 		documentID:    documentID,
-		checksum:      domain.NewChecksum(extraction.Text),
+		checksum:      checksum,
 		extraction:    extraction,
 		summary:       summary,
 		summaryStatus: summaryStatus(in.Summarize),

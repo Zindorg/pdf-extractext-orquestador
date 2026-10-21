@@ -86,6 +86,8 @@ func newExtractAccepted(result domain.IngestResult) extractAccepted {
 	if result.SummaryStatus != domain.SummaryNotRequested {
 		summaryTime := result.SummaryTimeMS
 		accepted.SummaryTimeMS = &summaryTime
+	} else {
+		accepted.SummaryTimeMS = nil
 	}
 	for _, warning := range result.Warnings {
 		accepted.Warnings = append(accepted.Warnings, warningDTO{Code: warning.Code, Message: warning.Message})
