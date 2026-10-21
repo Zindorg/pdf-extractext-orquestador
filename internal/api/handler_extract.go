@@ -20,6 +20,7 @@ func handleExtract(useCase ExtractUseCase, publicBaseURL string) gin.HandlerFunc
 			Bytes:     in.Document,
 			Filename:  filenameOf(c),
 			Summarize: in.Summarize,
+			Metadata:  map[string]any{},
 		})
 		if err != nil {
 			writeError(c, err)

@@ -20,6 +20,8 @@ type OriginalEvent struct {
 	SummaryStatus    SummaryStatus
 	ExtractionTimeMS int64
 	ExtractedAt      time.Time
+	Filename         string
+	Metadata         map[string]any
 }
 
 func (OriginalEvent) isEvent() {}

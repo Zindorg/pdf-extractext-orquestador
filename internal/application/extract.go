@@ -31,6 +31,11 @@ type ingestion struct {
 	extraction    domain.Extraction
 	summary       domain.Summary
 	summaryStatus domain.SummaryStatus
+	mimeType      string
+	summarize     bool
+	extractedAt   time.Time
+	filename      string
+	metadata      map[string]any
 }
 
 // Execute corre el pipeline de ingesta: puerta 1 → extraer → puerta 2 → resumen → publicar. El
@@ -62,6 +67,11 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 		extraction:    extraction,
 		summary:       summary,
 		summaryStatus: summaryStatus(in.Summarize),
+		mimeType:      "application/pdf",
+		summarize:     in.Summarize,
+		extractedAt:   time.Now().UTC(),
+		filename:      in.Filename,
+		metadata:      in.Metadata,
 	}
 
 	if err := u.publish(ctx, ing); err != nil {
@@ -95,11 +105,13 @@ func (u *ExtractUseCase) publish(ctx context.Context, ing ingestion) error {
 		DocumentID:       ing.documentID,
 		Checksum:         ing.checksum,
 		ExtractedText:    ing.extraction.Text,
-		MimeType:         mimeTypePDF,
-		SummaryRequested: ing.summaryStatus == domain.SummaryResolved,
+		MimeType:         ing.mimeType,
+		SummaryRequested: ing.summarize,
 		SummaryStatus:    ing.summaryStatus,
 		ExtractionTimeMS: ing.extraction.TimeMS,
-		ExtractedAt:      time.Now().UTC(),
+		ExtractedAt:      ing.extractedAt,
+		Filename:         ing.filename,
+		Metadata:         ing.metadata,
 	}); err != nil {
 		return err
 	}

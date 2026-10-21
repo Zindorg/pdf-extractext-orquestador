@@ -41,6 +41,7 @@ type IncomingDocument struct {
 	Bytes     []byte
 	Filename  string
 	Summarize bool
+	Metadata  map[string]any
 }
 
 // Warning es un problema no fatal de la extracción. El vocabulario es abierto.

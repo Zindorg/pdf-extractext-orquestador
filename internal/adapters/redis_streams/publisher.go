@@ -82,7 +82,10 @@ func encode(event any) (string, []byte, error) {
 			SummaryStatus:    string(e.SummaryStatus),
 			ExtractionTimeMS: e.ExtractionTimeMS,
 			ExtractedAt:      e.ExtractedAt.UTC().Format(time.RFC3339),
+			Filename:         e.Filename,
+			Metadata:         e.Metadata,
 		}
+
 	case domain.SummaryResolvedEvent:
 		key = string(e.DocumentID)
 		body = summaryResolvedBody{
@@ -108,16 +111,18 @@ func encode(event any) (string, []byte, error) {
 }
 
 type originalBody struct {
-	SchemaVersion    int    `json:"schema_version"`
-	EventType        string `json:"event_type"`
-	DocumentID       string `json:"document_id"`
-	Checksum         string `json:"checksum"`
-	ExtractedText    string `json:"extracted_text"`
-	MimeType         string `json:"mime_type"`
-	SummaryRequested bool   `json:"summary_requested"`
-	SummaryStatus    string `json:"summary_status"`
-	ExtractionTimeMS int64  `json:"extraction_time_ms"`
-	ExtractedAt      string `json:"extracted_at"`
+	SchemaVersion    int            `json:"schema_version"`
+	EventType        string         `json:"event_type"`
+	DocumentID       string         `json:"document_id"`
+	Checksum         string         `json:"checksum"`
+	ExtractedText    string         `json:"extracted_text"`
+	MimeType         string         `json:"mime_type"`
+	SummaryRequested bool           `json:"summary_requested"`
+	SummaryStatus    string         `json:"summary_status"`
+	ExtractionTimeMS int64          `json:"extraction_time_ms"`
+	ExtractedAt      string         `json:"extracted_at"`
+	Filename         string         `json:"filename,omitempty"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
 }
 
 type summaryResolvedBody struct {
