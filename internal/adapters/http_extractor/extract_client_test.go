@@ -203,3 +203,25 @@ func TestExtractDoesNotRetryOnRejection(t *testing.T) {
 		t.Errorf("hits = %d, quería 1: un error de validación no se reintenta", hits)
 	}
 }
+
+func TestExtractMapsEmptyTextToReasonEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"extracted_text":     "",
+			"extraction_time_ms": 1,
+		})
+	}))
+	defer server.Close()
+
+	extraction, err := testClient(server.URL).Extract(t.Context(), "id", testDocument())
+	if err != nil {
+		t.Fatalf("Extract() con texto vacío no debe fallar: %v", err)
+	}
+	if extraction.Reason != domain.ReasonEmpty {
+		t.Errorf("Reason = %q, quería %q", extraction.Reason, domain.ReasonEmpty)
+	}
+	if extraction.Text != "" {
+		t.Errorf("Text = %q, quería vacío", extraction.Text)
+	}
+}

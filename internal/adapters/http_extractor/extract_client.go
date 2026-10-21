@@ -126,11 +126,16 @@ func decodeSuccess(resp *http.Response) (domain.Extraction, bool, error) {
 		return domain.Extraction{}, false, unavailable("leer la respuesta del Extractor", err)
 	}
 
+	reason := domain.ReasonSuccess
+	if strings.TrimSpace(payload.ExtractedText) == "" {
+		reason = domain.ReasonEmpty
+	}
+
 	return domain.Extraction{
 		Text:     payload.ExtractedText,
 		TimeMS:   payload.ExtractionTimeMS,
 		Warnings: toWarnings(payload.Warnings),
-		Reason:   domain.ReasonSuccess,
+		Reason:   reason,
 	}, false, nil
 }
 
