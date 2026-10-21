@@ -85,7 +85,7 @@ func run() error {
 	defer func() { _ = publisher.Close() }()
 
 	router := api.NewRouter(api.Deps{
-		Extract:       application.NewExtractUseCase(extractor, summarizer, publisher),
+		Extract:       application.NewExtractUseCase(extractor, summarizer, publisher, persister),
 		Summary:       application.NewSummaryUseCase(persister, summarizer, publisher),
 		Proxy:         application.NewProxyUseCase(persister),
 		PublicBaseURL: cfg.PublicBaseURL,

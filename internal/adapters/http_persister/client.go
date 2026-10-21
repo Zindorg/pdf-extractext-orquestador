@@ -77,7 +77,6 @@ func translate(status int, body []byte) error {
 	}
 	if err := json.Unmarshal(body, &envelope); err == nil {
 		if known := domain.FromCode(envelope.Code); known != nil {
-			// El mensaje es el del dominio: el del otro servicio puede exponer su interior.
 			return known
 		}
 	}
@@ -89,4 +88,47 @@ func translate(status int, body []byte) error {
 		return domain.ErrDocumentNotFound
 	}
 	return fmt.Errorf("respuesta del Persistidor sin código reconocible (status %d)", status)
+}
+
+// FindActiveByChecksum consulta al Persistidor por checksum activo. Un 404 significa que no hay
+// duplicado activo (no es error): el flujo normal de ingesta debe continuar.
+func (c *Client) FindActiveByChecksum(ctx context.Context, checksum domain.Checksum) (domain.StoredDocumentSummary, bool, error) {
+	target := c.baseURL + "/api/v1/documents/checksum/" + string(checksum)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return domain.StoredDocumentSummary{}, false, fmt.Errorf("armar la petición al Persistidor: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return domain.StoredDocumentSummary{}, false, fmt.Errorf("llamar al Persistidor: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return domain.StoredDocumentSummary{}, false, fmt.Errorf("leer la respuesta del Persistidor: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return domain.StoredDocumentSummary{}, false, nil
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var payload struct {
+			DocumentID    string `json:"document_id"`
+			SummaryStatus string `json:"summary_status"`
+			Summary       string `json:"summary"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return domain.StoredDocumentSummary{}, false, fmt.Errorf("decodificar documento por checksum: %w", err)
+		}
+		return domain.StoredDocumentSummary{
+			DocumentID:    domain.DocumentID(payload.DocumentID),
+			SummaryStatus: domain.SummaryStatus(payload.SummaryStatus),
+			Summary:       payload.Summary,
+		}, true, nil
+	}
+
+	return domain.StoredDocumentSummary{}, false, fmt.Errorf("respuesta del Persistidor sin código reconocible (status %d)", resp.StatusCode)
 }
