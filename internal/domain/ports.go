@@ -45,9 +45,17 @@ type PersisterResponse struct {
 	Body       []byte
 }
 
+// StoredDocumentSummary es el resumen del documento activo devuelto por la consulta por checksum.
+type StoredDocumentSummary struct {
+	DocumentID    DocumentID
+	SummaryStatus SummaryStatus
+	Summary       string
+}
+
 // PersisterProxy reenvía peticiones al Persistidor. Un `4xx` que el Persistidor reporta con un
 // código del vocabulario público sale como error de dominio tipado; un fallo de transporte o un
 // estado no previsto sale como error sin tipar y la capa api lo responde `500`.
 type PersisterProxy interface {
 	Do(ctx context.Context, req PersisterRequest) (PersisterResponse, error)
+	FindActiveByChecksum(ctx context.Context, checksum Checksum) (StoredDocumentSummary, bool, error)
 }
