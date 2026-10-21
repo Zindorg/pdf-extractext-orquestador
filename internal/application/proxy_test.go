@@ -16,7 +16,14 @@ type proxyPersisterStub struct {
 
 func (s *proxyPersisterStub) Do(_ context.Context, req domain.PersisterRequest) (domain.PersisterResponse, error) {
 	s.requests = append(s.requests, req)
-	return s.response, s.err
+	if s.err != nil {
+		return domain.PersisterResponse{}, s.err
+	}
+	return s.response, nil
+}
+
+func (s *proxyPersisterStub) FindActiveByChecksum(_ context.Context, _ domain.Checksum) (domain.StoredDocumentSummary, bool, error) {
+	return domain.StoredDocumentSummary{}, false, nil
 }
 
 const demandDocumentID = "0f8fad5b-d9cb-469f-a165-70867728950e"

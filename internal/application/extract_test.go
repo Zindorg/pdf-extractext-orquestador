@@ -57,7 +57,7 @@ func TestExtractUseCasePublishesOriginalWithoutSummary(t *testing.T) {
 	summarizer := &summarizerSpy{}
 	publisher := &publisherSpy{}
 
-	result, err := NewExtractUseCase(extractor, summarizer, publisher).Execute(context.Background(), domain.IncomingDocument{
+	result, err := NewExtractUseCase(extractor, summarizer, publisher, nil).Execute(context.Background(), domain.IncomingDocument{
 		Bytes:     []byte(validPDFBytes),
 		Filename:  "doc.pdf",
 		Summarize: false,
@@ -112,7 +112,7 @@ func TestExtractUseCasePublishesSummaryAfterOriginal(t *testing.T) {
 	summarizer := &summarizerSpy{result: domain.Summary{Text: "resumen", TimeMS: 8300}}
 	publisher := &publisherSpy{}
 
-	result, err := NewExtractUseCase(extractor, summarizer, publisher).Execute(context.Background(), domain.IncomingDocument{
+	result, err := NewExtractUseCase(extractor, summarizer, publisher, nil).Execute(context.Background(), domain.IncomingDocument{
 		Bytes:     []byte(validPDFBytes),
 		Filename:  "doc.pdf",
 		Summarize: true,
@@ -169,7 +169,7 @@ func TestExtractUseCaseRejectsBeforeExtracting(t *testing.T) {
 			extractor := &extractorStub{}
 			publisher := &publisherSpy{}
 
-			_, err := NewExtractUseCase(extractor, &summarizerSpy{}, publisher).
+			_, err := NewExtractUseCase(extractor, &summarizerSpy{}, publisher, nil).
 				Execute(context.Background(), domain.IncomingDocument{Bytes: tc.body})
 
 			if !errors.Is(err, tc.want) {
@@ -189,7 +189,7 @@ func TestExtractUseCasePublishesNothingWhenExtractionFails(t *testing.T) {
 	t.Run("el Extractor no responde", func(t *testing.T) {
 		publisher := &publisherSpy{}
 
-		_, err := NewExtractUseCase(&extractorStub{err: domain.ErrExtractorUnavailable}, &summarizerSpy{}, publisher).
+		_, err := NewExtractUseCase(&extractorStub{err: domain.ErrExtractorUnavailable}, &summarizerSpy{}, publisher, nil).
 			Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes)})
 
 		if !errors.Is(err, domain.ErrExtractorUnavailable) {
@@ -204,7 +204,7 @@ func TestExtractUseCasePublishesNothingWhenExtractionFails(t *testing.T) {
 		extractor := &extractorStub{result: domain.Extraction{Reason: domain.ReasonEncryptedPDF}}
 		publisher := &publisherSpy{}
 
-		_, err := NewExtractUseCase(extractor, &summarizerSpy{}, publisher).
+		_, err := NewExtractUseCase(extractor, &summarizerSpy{}, publisher, nil).
 			Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes)})
 
 		var domainErr *domain.Error
@@ -221,7 +221,7 @@ func TestExtractUseCasePublishesNothingWhenSummaryFails(t *testing.T) {
 	extractor := &extractorStub{result: domain.Extraction{Text: "texto plano", Reason: domain.ReasonSuccess}}
 	publisher := &publisherSpy{}
 
-	_, err := NewExtractUseCase(extractor, &summarizerSpy{err: domain.ErrSummaryFailed}, publisher).
+	_, err := NewExtractUseCase(extractor, &summarizerSpy{err: domain.ErrSummaryFailed}, publisher, nil).
 		Execute(context.Background(), domain.IncomingDocument{
 			Bytes:     []byte(validPDFBytes),
 			Summarize: true,
@@ -248,7 +248,7 @@ func TestExtractUseCasePublishesNothingWhenSummaryIsEmpty(t *testing.T) {
 			summarizer := &summarizerSpy{result: domain.Summary{Text: text}}
 			publisher := &publisherSpy{}
 
-			_, err := NewExtractUseCase(extractor, summarizer, publisher).
+			_, err := NewExtractUseCase(extractor, summarizer, publisher, nil).
 				Execute(context.Background(), domain.IncomingDocument{
 					Bytes:     []byte(validPDFBytes),
 					Summarize: true,

@@ -57,6 +57,10 @@ func (s *summaryPersisterStub) Do(_ context.Context, req domain.PersisterRequest
 	return domain.PersisterResponse{}, domain.ErrDocumentNotFound
 }
 
+func (s *summaryPersisterStub) FindActiveByChecksum(_ context.Context, _ domain.Checksum) (domain.StoredDocumentSummary, bool, error) {
+	return domain.StoredDocumentSummary{}, false, nil
+}
+
 type demandSummarizerStub struct {
 	called     bool
 	documentID domain.DocumentID
