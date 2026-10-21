@@ -195,7 +195,7 @@ func applyMessage(st *store, msg redis.XMessage) {
 			log.Printf("summary_resolved %s sin original, descarte", event.DocumentID)
 			return
 		}
-		if doc.SummaryStatus == "RESOLVED" {
+		if doc.Summary != "" && doc.ResolvedAt != "" {
 			log.Printf("summary_resolved %s duplicado, descarte", event.DocumentID)
 			return
 		}
