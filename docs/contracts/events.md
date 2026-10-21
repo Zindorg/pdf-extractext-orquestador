@@ -40,7 +40,9 @@ Esa es también la razón de que la respuesta `502` sea limpia: si nada se publi
 ## Versionado
 
 Todo mensaje lleva `schema_version`, un entero que empieza en `1`. Va dentro del payload, no en un header de
-Redis, para que un mensaje sea legible sin conocer nada del transporte.
+Redis, para que un mensaje sea legible sin conocer nada del transporte. 
+
+**Regla cruzada:** el productor emite siempre `schema_version: 1`. El consumidor del Persistidor debe ser estricto con versiones desconocidas (tratar como mensaje inválido → reintento/DLQ) según el delta de contrato; los campos desconocidos deben ignorarse cuando la versión es compatible. Subir `schema_version` es una ruptura y exige acuerdo cross-repo antes de hacerlo.
 
 Reglas de compatibilidad:
 
@@ -83,9 +85,11 @@ sistema.
 | `summary_status` | string | sí | Estado de resumen en el momento de publicar: `RESOLVED` o `NOT_REQUESTED`. Los otros dos valores no pueden aparecer acá, porque este evento se publica cuando el resumen ya resolvió o nunca se pidió. |
 | `extraction_time_ms` | entero | sí | Duración de la extracción **en milisegundos**. Solo esta pata, no el total. |
 | `extracted_at` | string (RFC 3339) | sí | Momento en que terminó la extracción, en UTC. |
+| `filename` | string | opcional | Nombre del archivo declarado por el cliente, heredado de la admisión. |
+| `metadata` | objeto | opcional | Metadatos heredados de la admisión; campos desconocidos deben ignorarse. |
 
 `summary_status` es el campo que le evita al consumidor tener que adivinar entre "falló" y "no se pidió"
-(ADR-0006).
+(ADR-0006). También puede incluir `filename` y `metadata` heredados de la admisión (opcionales).
 
 `summary_requested` parece redundante con `summary_status` —de hecho lo es en el camino normal, porque
 `NOT_REQUESTED` implica `false` y los otros tres valores implican `true`— pero **no lo es en un caso**: después de
