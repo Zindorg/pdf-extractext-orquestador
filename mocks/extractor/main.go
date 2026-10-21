@@ -29,8 +29,9 @@ const defaultAddr = ":8080"
 // textByFilename da un texto estable por caso de prueba, para que el checksum publicado sea
 // predecible y el smoke pueda afirmar sobre él.
 var textByFilename = map[string]string{
-	"contrato.pdf": "texto extraído del contrato de prueba",
-	"lento.pdf":    "texto extraído con demora",
+	"contrato.pdf":        "texto extraído del contrato de prueba",
+	"lento.pdf":           "texto extraído con demora",
+	"demasiado-largo.pdf": "texto con [demasiado-largo] para forzar document_too_long",
 }
 
 // rejectByFilename mapea un archivo al motivo del enum de extracción (workers.md). El Orquestador
@@ -87,6 +88,9 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	text := textByFilename[filename]
 	if strings.HasPrefix(filename, "vacio") {
 		text = ""
+	}
+	if text == "" && !strings.HasPrefix(filename, "vacio") {
+		text = "texto extraído de prueba por defecto"
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
