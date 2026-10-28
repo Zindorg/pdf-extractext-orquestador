@@ -1,35 +1,38 @@
 # syntax=docker/dockerfile:1
 
-# Build multi-stage. Go compila estático, así que la imagen final no necesita ni sistema
-# operativo completo: distroless static deja solo el binario y los certificados TLS, sin shell ni
-# gestor de paquetes, que es la menor superficie posible para un servicio público (ADR-0007).
-FROM golang:1.27 AS build
+ARG GO_VERSION=1.27
 
+# ---------- Build ----------
+FROM golang:${GO_VERSION}-bookworm AS build
 WORKDIR /src
 
-# Copiar los manifiestos primero: mientras no cambien, la capa de descarga de módulos se reutiliza.
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download && go mod verify
 
 COPY cmd ./cmd
 COPY internal ./internal
+COPY web ./web
 
-# CGO off para un binario estático, que no arrastre la libc del builder.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux \
+    go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/server ./cmd/server
 
-
+# ---------- Runtime ----------
 FROM gcr.io/distroless/static-debian12:nonroot
 
+ARG VERSION=dev
 LABEL org.opencontainers.image.title="pdf-extractext-orquestador" \
       org.opencontainers.image.description="Punto de entrada público del sistema PDF-Extractext" \
-      org.opencontainers.image.source="https://github.com/Zindorg/pdf-extractext-orquestador"
+      org.opencontainers.image.source="https://github.com/Zindorg/pdf-extractext-orquestador" \
+      org.opencontainers.image.version="${VERSION}"
 
 WORKDIR /app
-COPY --from=build /out/server /app/server
 
-# El usuario nonroot del distroless ya trae UID/GID 65532.
-USER nonroot:nonroot
+COPY --from=build --chmod=0555 /out/server /app/server
+
+USER 65532:65532
 
 EXPOSE 8080
-
 ENTRYPOINT ["/app/server"]
