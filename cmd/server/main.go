@@ -22,6 +22,7 @@ import (
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/application"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/config"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/observability"
+	webrouter "github.com/Zindorg/pdf-extractext-orquestador/internal/web/router"
 )
 
 // shutdownGrace es cuánto se espera a que las peticiones en vuelo terminen antes de forzar la salida.
@@ -84,10 +85,14 @@ func run() error {
 	publisher := redis_streams.New(cfg.RedisAddr, cfg.StreamName)
 	defer func() { _ = publisher.Close() }()
 
+	extractUC := application.NewExtractUseCase(extractor, summarizer, publisher, persister)
+	summaryUC := application.NewSummaryUseCase(persister, summarizer, publisher)
+	proxyUC := application.NewProxyUseCase(persister)
+
 	router := api.NewRouter(api.Deps{
-		Extract:       application.NewExtractUseCase(extractor, summarizer, publisher, persister),
-		Summary:       application.NewSummaryUseCase(persister, summarizer, publisher),
-		Proxy:         application.NewProxyUseCase(persister),
+		Extract:       extractUC,
+		Summary:       summaryUC,
+		Proxy:         proxyUC,
 		PublicBaseURL: cfg.PublicBaseURL,
 		Ready:         publisher.Ready,
 		Logger:        logger,
@@ -95,6 +100,16 @@ func run() error {
 		ExtractGate:   middleware.NewSemaphore(cfg.ExtractMaxInFlight),
 		SummaryGate:   middleware.NewSemaphore(cfg.SummaryMaxInFlight),
 	})
+
+	if err := webrouter.Register(router, webrouter.Deps{
+		Extract:       extractUC,
+		Summary:       summaryUC,
+		Proxy:         proxyUC,
+		PublicBaseURL: cfg.PublicBaseURL,
+		Logger:        logger,
+	}); err != nil {
+		return err
+	}
 
 	server := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.HTTPPort),
