@@ -1,0 +1,33 @@
+{{ define "documents_list.html" }}
+{{ template "base.html" . }}
+{{ end }}
+
+{{ define "content" }}
+<h1>Documentos</h1>
+<form method="get" action="/documents">
+    <label>Status: <input name="status" value="{{ .Status }}"></label>
+    <label>Nombre: <input name="filename" value="{{ .Filename }}"></label>
+    <label><input type="checkbox" name="include_deleted" value="true" {{ if .IncludeDeleted }}checked{{ end }}> Incluir borrados</label>
+    <button type="submit">Filtrar</button>
+</form>
+<table>
+    <thead>
+        <tr><th>Nombre</th><th>Estado resumen</th><th>Creado</th><th>Acciones</th></tr>
+    </thead>
+    <tbody>
+    {{ range .Items }}
+        <tr>
+            <td>{{ .Filename }}</td>
+            <td>{{ .SummaryStatus }}</td>
+            <td>{{ .CreatedAt }}</td>
+            <td><a href="/documents/{{ .DocumentID }}">Ver</a></td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+<div>
+    {{ if .HasPrev }}<a href="/documents?page={{ .PrevPage }}">Anterior</a>{{ end }}
+    Página {{ .Page }}
+    {{ if .HasNext }}<a href="/documents?page={{ .NextPage }}">Siguiente</a>{{ end }}
+</div>
+{{ end }}

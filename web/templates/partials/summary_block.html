@@ -1,0 +1,13 @@
+{{ define "summary_block.html" }}
+{{ if eq .Doc.SummaryStatus "PENDING" }}
+<div hx-get="/documents/{{ .Doc.DocumentID }}" hx-trigger="every 3s" hx-target="#summary-block" hx-swap="outerHTML" hx-select="#summary-block" aria-live="polite">
+    <p>El resumen está en proceso...</p>
+</div>
+{{ else if eq .Doc.SummaryStatus "RESOLVED" }}
+<pre><code>{{ .Doc.Summary }}</code></pre>
+{{ else if eq .Doc.SummaryStatus "FAILED" }}
+<p>No se pudo generar el resumen.</p>
+{{ else }}
+<p>No se solicitó resumen.</p>
+{{ end }}
+{{ end }}

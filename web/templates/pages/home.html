@@ -1,0 +1,23 @@
+{{ define "home.html" }}
+{{ template "base.html" . }}
+{{ end }}
+
+{{ define "content" }}
+<h1>Subir documento PDF</h1>
+<form action="/upload" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ .CSRFToken }}">
+    <div>
+        <label for="document">Archivo PDF</label>
+        <input type="file" id="document" name="document" accept="application/pdf,.pdf" required>
+    </div>
+    <div>
+        <label>
+            <input type="checkbox" name="summarize" value="true"> Generar resumen
+        </label>
+    </div>
+    <button type="submit">Subir</button>
+</form>
+{{ if .Error }}
+<div class="error">{{ .Error }}</div>
+{{ end }}
+{{ end }}

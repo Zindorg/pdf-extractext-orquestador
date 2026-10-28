@@ -1,0 +1,56 @@
+{{ define "document_detail.html" }}
+{{ template "base.html" . }}
+{{ end }}
+
+{{ define "content" }}
+<h1>Detalle del documento</h1>
+<p><strong>ID:</strong> {{ .Doc.DocumentID }}</p>
+<p><strong>Archivo:</strong> {{ .Doc.Filename }}</p>
+<p><strong>Estado resumen:</strong> {{ .Doc.SummaryStatus }}</p>
+
+{{ if .Processing }}
+<div class="alert" aria-live="polite">El documento se está procesando</div>
+{{ end }}
+
+{{ if .Error }}
+<div class="error">{{ .Error }}</div>
+{{ end }}
+
+<div>
+    <a href="/documents/{{ .Doc.DocumentID }}/download/original">Descargar texto extraído</a>
+    {{ if eq .Doc.SummaryStatus "RESOLVED" }}
+        | <a href="/documents/{{ .Doc.DocumentID }}/download/summary">Descargar resumen</a>
+    {{ end }}
+</div>
+
+<div>
+    {{ if or (eq .Doc.SummaryStatus "NOT_REQUESTED") (eq .Doc.SummaryStatus "FAILED") }}
+    <form action="/documents/{{ .Doc.DocumentID }}/summary" method="post">
+        <input type="hidden" name="csrf" value="{{ .CSRFToken }}">
+        <button type="submit">Pedir resumen</button>
+    </form>
+    {{ end }}
+</div>
+
+<div>
+    {{ if .Doc.DeletedAt }}
+    <form action="/documents/{{ .Doc.DocumentID }}/restore" method="post">
+        <input type="hidden" name="csrf" value="{{ .CSRFToken }}">
+        <button type="submit">Restaurar</button>
+    </form>
+    {{ else }}
+    <form action="/documents/{{ .Doc.DocumentID }}/delete" method="post" onsubmit="return confirm('¿Borrar documento?');">
+        <input type="hidden" name="csrf" value="{{ .CSRFToken }}">
+        <button type="submit">Borrar</button>
+    </form>
+    {{ end }}
+</div>
+
+<h2>Texto extraído</h2>
+<pre><code>{{ .Doc.ExtractedText }}</code></pre>
+
+<h2>Resumen</h2>
+<div id="summary-block">
+{{ template "summary_block.html" . }}
+</div>
+{{ end }}
