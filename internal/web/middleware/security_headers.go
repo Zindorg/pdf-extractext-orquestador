@@ -7,7 +7,7 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-Frame-Options", "DENY")
-		c.Header("Referrer-Policy", "no-referrer")
+		c.Header("Referrer-Policy", "same-origin")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		c.Next()
 	}
