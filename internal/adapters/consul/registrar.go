@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpclient"
 )
 
 // Registration describe la instancia que se anuncia en Consul.
@@ -39,7 +41,7 @@ type Registrar struct {
 // cuando el ACL de Consul admite registros anónimos.
 func New(baseURL, token string, reg Registration) *Registrar {
 	return &Registrar{
-		httpClient: &http.Client{Timeout: 5 * time.Second},
+		httpClient: httpclient.New(5 * time.Second),
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		token:      token,
 		reg:        reg,

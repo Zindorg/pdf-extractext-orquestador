@@ -1,9 +1,12 @@
 package redisstreams
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -281,5 +284,13 @@ func TestNewTomaContraseñaYMaxLen(t *testing.T) {
 	}
 	if opts := adder.client.Options(); opts.Password != "clave" || opts.DB != 2 || opts.Addr != "redis:6379" {
 		t.Errorf("opciones = addr %q db %d", opts.Addr, opts.DB)
+	}
+}
+
+func TestSlogPrinterEscribeJSON(t *testing.T) {
+	var buf bytes.Buffer
+	slogPrinter{logger: slog.New(slog.NewJSONHandler(&buf, nil))}.Printf(context.Background(), "pool: %s", "dial failed")
+	if !strings.Contains(buf.String(), `"detail":"pool: dial failed"`) || !strings.Contains(buf.String(), `"level":"WARN"`) {
+		t.Fatalf("log = %s", buf.String())
 	}
 }

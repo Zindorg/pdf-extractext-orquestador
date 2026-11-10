@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpclient"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
 
@@ -28,7 +29,7 @@ const defaultMaxResponseBytes = 32 << 20
 // dado. El timeout acota la espera: el proxy no debe retener la conexión del cliente sin límite.
 func New(baseURL string, timeout time.Duration) *Client {
 	return &Client{
-		httpClient:       &http.Client{Timeout: timeout},
+		httpClient:       httpclient.New(timeout),
 		baseURL:          strings.TrimRight(baseURL, "/"),
 		maxResponseBytes: defaultMaxResponseBytes,
 	}

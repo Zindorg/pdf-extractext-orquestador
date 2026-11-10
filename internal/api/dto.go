@@ -16,6 +16,7 @@ import (
 // antes de llegar al caso de uso.
 type intake struct {
 	Document  []byte
+	Filename  string
 	Summarize bool
 }
 
@@ -63,7 +64,11 @@ func parseIntake(c *gin.Context, maxBytes int) (intake, error) {
 		summarize = parsed
 	}
 
-	return intake{Document: content, Summarize: summarize}, nil
+	return intake{
+		Document:  content,
+		Filename:  domain.CleanFilename(documents[0].Filename),
+		Summarize: summarize,
+	}, nil
 }
 
 // extractAccepted es la respuesta de una admisión (openapi.yaml, esquema `ExtractAccepted`).

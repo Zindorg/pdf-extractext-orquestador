@@ -83,6 +83,7 @@ func run() error {
 	}
 	// Todo lo que use el logger por defecto (Recovery, librerías) sale en el mismo JSON.
 	slog.SetDefault(logger)
+	redisstreams.SetLogger(logger)
 
 	extractor := httpextractor.New(cfg.ExtractorURL, cfg.ExtractorTimeout)
 	summarizer := httpsummarizer.New(cfg.SummarizerURL, cfg.SummarizerTimeout)

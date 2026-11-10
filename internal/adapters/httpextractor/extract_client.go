@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpclient"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpretry"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
@@ -37,7 +38,7 @@ type Client struct {
 // dado. El timeout es acotado: un worker colgado no debe poder retener el pedido del cliente.
 func New(baseURL string, timeout time.Duration) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: httpclient.New(timeout),
 		endpoint:   strings.TrimRight(baseURL, "/") + "/extract",
 		backoff:    httpretry.LinearBackoff,
 	}

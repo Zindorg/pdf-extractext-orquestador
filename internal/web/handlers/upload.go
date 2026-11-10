@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -56,7 +54,7 @@ func (h *Handlers) Upload(c *gin.Context) {
 
 	result, err := h.deps.Extract.Execute(c.Request.Context(), domain.IncomingDocument{
 		Bytes:     data,
-		Filename:  cleanFilename(header.Filename),
+		Filename:  domain.CleanFilename(header.Filename),
 		Summarize: summarize,
 		Metadata:  map[string]any{},
 	})
@@ -79,17 +77,4 @@ func (h *Handlers) Upload(c *gin.Context) {
 	// Recién publicado: el Persistidor lo asienta de forma asíncrona. La página de detalle espera y
 	// se recarga sola hasta que aparece (el 404 inicial es transitorio, no un error).
 	redirect(c, "/documents/"+id+"?notice=uploaded&wait="+view.WaitDoc+"&n=0")
-}
-
-// cleanFilename deja solo el nombre del archivo, sin la ruta que algunos navegadores antiguos envían,
-// y con un largo razonable.
-func cleanFilename(name string) string {
-	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
-	if name == "." || name == "/" {
-		return ""
-	}
-	if r := []rune(name); len(r) > 255 {
-		name = string(r[:255])
-	}
-	return name
 }
