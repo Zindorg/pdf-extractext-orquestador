@@ -6,38 +6,48 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
-	weberrors "github.com/Zindorg/pdf-extractext-orquestador/internal/web/errors"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/view"
 )
 
+// Las acciones responden siempre con una redirección (POST → redirect → GET): recargar la página
+// resultante no repite la acción, y el resultado se muestra como aviso en la página de destino.
+
+// RequestSummary pide el resumen de un documento ya guardado.
 func (h *Handlers) RequestSummary(c *gin.Context) {
 	id := c.Param("id")
-	res, err := h.deps.Summary.Execute(c.Request.Context(), domain.DocumentID(id))
-	if err != nil {
-		h.renderer.HTML(c, weberrors.StatusCode(err), "document_detail.html", gin.H{"Error": weberrors.UserMessage(err)})
+	if _, err := h.deps.Summary.Execute(c.Request.Context(), domain.DocumentID(id)); err != nil {
+		redirect(c, "/documents/"+id+"?error="+errCode(err))
 		return
 	}
-	_ = res
-	c.Redirect(http.StatusFound, "/documents/"+id)
+	// El resumen se publicó, pero el Persistidor lo asienta de forma asíncrona: la página espera.
+	redirect(c, "/documents/"+id+"?notice=summary_requested&wait="+view.WaitSummary+"&n=0")
 }
 
+// Delete borra (lógicamente) un documento.
 func (h *Handlers) Delete(c *gin.Context) {
 	id := c.Param("id")
-	req := domain.PersisterRequest{Method: "DELETE", Path: "/api/v1/documents/" + id}
-	_, err := h.deps.Proxy.Forward(c.Request.Context(), req)
+	_, err := h.deps.Proxy.Forward(c.Request.Context(), domain.PersisterRequest{
+		Method: http.MethodDelete,
+		Path:   "/api/v1/documents/" + id,
+	})
 	if err != nil {
-		h.renderer.HTML(c, weberrors.StatusCode(err), "document_detail.html", gin.H{"Error": weberrors.UserMessage(err)})
+		redirect(c, "/documents/"+id+"?error="+errCode(err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/documents")
+	redirect(c, "/documents?notice=deleted")
 }
 
+// Restore restaura un documento borrado.
 func (h *Handlers) Restore(c *gin.Context) {
 	id := c.Param("id")
-	req := domain.PersisterRequest{Method: "POST", Path: "/api/v1/documents/" + id + "/restore"}
-	_, err := h.deps.Proxy.Forward(c.Request.Context(), req)
+	_, err := h.deps.Proxy.Forward(c.Request.Context(), domain.PersisterRequest{
+		Method: http.MethodPost,
+		Path:   "/api/v1/documents/" + id + "/restore",
+	})
 	if err != nil {
-		h.renderer.HTML(c, weberrors.StatusCode(err), "document_detail.html", gin.H{"Error": weberrors.UserMessage(err)})
+		// Un documento borrado no se puede abrir: el error se muestra donde está la acción.
+		redirect(c, "/documents?include_deleted=true&error="+errCode(err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/documents/"+id)
+	redirect(c, "/documents/"+id+"?notice=restored")
 }

@@ -1,99 +1,101 @@
 package handlers
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
-	"net/url"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 	weberrors "github.com/Zindorg/pdf-extractext-orquestador/internal/web/errors"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/view"
 )
 
-func decodeJSONBody(b []byte, v any) error {
-	if len(b) == 0 {
-		return nil
-	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	return dec.Decode(v)
-}
-
+// List muestra el listado paginado con filtros.
 func (h *Handlers) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	status := c.Query("status")
-	filename := c.Query("filename")
-	includeDeleted := c.Query("include_deleted") == "true"
+	q := view.ParseListQuery(c.Query("page"), c.Query("page_size"), c.Query("status"),
+		c.Query("filename"), c.Query("include_deleted"))
+	base := flash(c, "documents")
 
-	q := url.Values{}
-	if page > 0 {
-		q.Set("page", strconv.Itoa(page))
-	}
-	if pageSize > 0 && pageSize <= 100 {
-		q.Set("page_size", strconv.Itoa(pageSize))
-	}
-	if status != "" {
-		q.Set("status", status)
-	}
-	if filename != "" {
-		q.Set("filename", filename)
-	}
-	if includeDeleted {
-		q.Set("include_deleted", "true")
-	}
-
-	req := domain.PersisterRequest{
-		Method:   "GET",
+	resp, err := h.deps.Proxy.Forward(c.Request.Context(), domain.PersisterRequest{
+		Method:   http.MethodGet,
 		Path:     "/api/v1/documents",
-		RawQuery: q.Encode(),
-	}
-
-	resp, err := h.deps.Proxy.Forward(c.Request.Context(), req)
+		RawQuery: q.PersisterQuery(),
+	})
 	if err != nil {
-		h.renderer.HTML(c, http.StatusInternalServerError, "documents_list.html", gin.H{"Error": weberrors.UserMessage(err), "Items": []any{}})
+		status, msg := http.StatusBadGateway, "No pudimos consultar el servicio de documentos. Probá de nuevo en unos segundos."
+		var de *domain.Error
+		if errors.As(err, &de) {
+			status, msg = weberrors.StatusCode(err), weberrors.UserMessage(err)
+		} else {
+			h.log().Error("fallo al listar documentos", "error", err)
+		}
+		l := view.BuildList(q, view.ListPayload{})
+		l.Base = view.Base{Nav: "documents", Error: msg}
+		h.renderer.HTML(c, status, "documents_list.html", l)
 		return
 	}
 
-	var out map[string]any
-	_ = decodeJSONBody(resp.Body, &out)
-	if out == nil {
-		out = map[string]any{}
+	var payload view.ListPayload
+	if err := json.Unmarshal(resp.Body, &payload); err != nil {
+		h.log().Error("respuesta ilegible del Persistidor al listar", "error", err)
+		l := view.BuildList(q, view.ListPayload{})
+		l.Base = view.Base{Nav: "documents", Error: "La respuesta del servicio de documentos no es válida."}
+		h.renderer.HTML(c, http.StatusBadGateway, "documents_list.html", l)
+		return
 	}
-	if _, ok := out["Items"]; !ok {
-		if items, ok := out["items"]; ok {
-			out["Items"] = items
-		}
-	}
-	h.renderer.HTML(c, http.StatusOK, "documents_list.html", out)
+	l := view.BuildList(q, payload)
+	l.Base = base
+	h.renderer.HTML(c, http.StatusOK, "documents_list.html", l)
 }
 
+// Detail muestra un documento. Si se acaba de subir y el Persistidor todavía no lo asentó, muestra un
+// estado de espera que se recarga solo; si el resumen está en curso, también.
 func (h *Handlers) Detail(c *gin.Context) {
 	id := c.Param("id")
-	req := domain.PersisterRequest{
-		Method: "GET",
-		Path:   "/api/v1/documents/" + id,
-	}
-	resp, err := h.deps.Proxy.Forward(c.Request.Context(), req)
+	kind, n := view.ParseWait(c.Query("wait"), c.Query("n"))
+	base := flash(c, "documents")
+
+	doc, err := h.fetchDocument(c.Request.Context(), id)
 	if err != nil {
-		var de *domain.Error
-		if e, ok := err.(*domain.Error); ok {
-			de = e
-			if de.Code == "document_not_found" {
-				h.renderer.HTML(c, http.StatusOK, "document_detail.html", gin.H{"Error": weberrors.UserMessage(err), "Processing": true, "Doc": map[string]any{"DocumentID": id, "SummaryStatus": "PENDING"}})
-				return
-			}
+		// Contrato (openapi.yaml): tras el 202, el 404 es transitorio durante 60 s; pasada la ventana es
+		// terminal. La ventana la fija el contador `n` de la URL, que el servidor acota.
+		if errCode(err) == "document_not_found" && kind == view.WaitDoc && n < view.MaxWaitAttempts {
+			h.renderer.HTML(c, http.StatusOK, "document_detail.html", view.Detail{
+				Base: base,
+				ID:   id,
+				Wait: view.NewWait(id, kind, n),
+			})
+			return
 		}
-		h.renderer.HTML(c, http.StatusNotFound, "document_detail.html", gin.H{"Error": weberrors.UserMessage(err)})
+		h.documentError(c, err, id)
 		return
 	}
-	var doc map[string]any
-	_ = decodeJSONBody(resp.Body, &doc)
-	if doc == nil {
-		doc = map[string]any{}
+
+	d := view.BuildDetail(doc, id)
+	d.Base = base
+	switch {
+	case kind == view.WaitSummary && d.Status.Code != view.StatusResolved:
+		d.Wait = view.NewWait(id, kind, n)
+	case d.Status.Code == view.StatusPending:
+		if kind != view.WaitPending {
+			n = 0
+		}
+		d.Wait = view.NewWait(id, view.WaitPending, n)
 	}
-	doc["DocumentID"] = id
-	h.renderer.HTML(c, http.StatusOK, "document_detail.html", gin.H{"Doc": doc})
+	h.renderer.HTML(c, http.StatusOK, "document_detail.html", d)
+}
+
+// FullText muestra el texto extraído completo.
+func (h *Handlers) FullText(c *gin.Context) {
+	id := c.Param("id")
+	doc, err := h.fetchDocument(c.Request.Context(), id)
+	if err != nil {
+		h.documentError(c, err, id)
+		return
+	}
+	t := view.BuildFullText(doc, id)
+	t.Base = view.Base{Nav: "documents"}
+	h.renderer.HTML(c, http.StatusOK, "document_text.html", t)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/render"
 )
 
+// Deps son las dependencias de la interfaz web.
 type Deps struct {
 	Extract       *application.ExtractUseCase
 	Summary       *application.SummaryUseCase
@@ -19,6 +20,7 @@ type Deps struct {
 	Logger        *slog.Logger
 }
 
+// Register agrega las rutas de la interfaz web al router.
 func Register(r *gin.Engine, d Deps) error {
 	rend, err := render.New()
 	if err != nil {
@@ -32,15 +34,21 @@ func Register(r *gin.Engine, d Deps) error {
 		Logger:        d.Logger,
 	}, rend)
 
-	// static
-	r.StaticFS("/static", render.StaticFS())
-
+	// Las cabeceras de seguridad van antes de registrar las rutas web, para que cubran también los
+	// estáticos y la página 404. Las rutas de la API, registradas antes, no se tocan.
 	r.Use(webmw.SecurityHeaders())
+
+	static := r.Group("/static", func(c *gin.Context) {
+		c.Header("Cache-Control", "public, max-age=3600")
+		c.Next()
+	})
+	static.StaticFS("/", render.StaticFS())
 
 	r.GET("/healthz", handlers.Healthz)
 	r.GET("/", h.Home)
 	r.GET("/documents", h.List)
 	r.GET("/documents/:id", webmw.ValidateUUID("id"), h.Detail)
+	r.GET("/documents/:id/text", webmw.ValidateUUID("id"), h.FullText)
 	r.GET("/documents/:id/download/original", webmw.ValidateUUID("id"), h.DownloadOriginal)
 	r.GET("/documents/:id/download/summary", webmw.ValidateUUID("id"), h.DownloadSummary)
 
@@ -49,5 +57,6 @@ func Register(r *gin.Engine, d Deps) error {
 	r.POST("/documents/:id/delete", webmw.CSRF(), webmw.ValidateUUID("id"), h.Delete)
 	r.POST("/documents/:id/restore", webmw.CSRF(), webmw.ValidateUUID("id"), h.Restore)
 
+	r.NoRoute(h.NotFound)
 	return nil
 }

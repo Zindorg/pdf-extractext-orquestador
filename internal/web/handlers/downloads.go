@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,42 +8,31 @@ import (
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
 
-func (h *Handlers) DownloadOriginal(c *gin.Context) {
-	id := c.Param("id")
-	req := domain.PersisterRequest{Method: "GET", Path: "/api/v1/documents/" + id + "/download/original"}
-	resp, err := h.deps.Proxy.Forward(c.Request.Context(), req)
-	if err != nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
-	if ct, ok := resp.Header["Content-Type"]; ok && len(ct) > 0 {
-		c.Header("Content-Type", ct[0])
-	}
-	if cd, ok := resp.Header["Content-Disposition"]; ok && len(cd) > 0 {
-		c.Header("Content-Disposition", cd[0])
-	}
-	c.Status(resp.StatusCode)
-	if len(resp.Body) > 0 {
-		_, _ = c.Writer.Write(resp.Body)
-	}
-}
+// DownloadOriginal descarga el texto extraído.
+func (h *Handlers) DownloadOriginal(c *gin.Context) { h.download(c, "original") }
 
-func (h *Handlers) DownloadSummary(c *gin.Context) {
+// DownloadSummary descarga el resumen.
+func (h *Handlers) DownloadSummary(c *gin.Context) { h.download(c, "summary") }
+
+func (h *Handlers) download(c *gin.Context, kind string) {
 	id := c.Param("id")
-	req := domain.PersisterRequest{Method: "GET", Path: "/api/v1/documents/" + id + "/download/summary"}
-	resp, err := h.deps.Proxy.Forward(c.Request.Context(), req)
+	resp, err := h.deps.Proxy.Forward(c.Request.Context(), domain.PersisterRequest{
+		Method: http.MethodGet,
+		Path:   "/api/v1/documents/" + id + "/download/" + kind,
+	})
 	if err != nil {
-		c.Status(http.StatusNotFound)
+		// Una descarga fallida muestra una página con el motivo, no un cuerpo vacío.
+		h.documentError(c, err, id)
 		return
 	}
-	if ct, ok := resp.Header["Content-Type"]; ok && len(ct) > 0 {
-		c.Header("Content-Type", ct[0])
+
+	contentType := "text/plain; charset=utf-8"
+	if ct := resp.Header["Content-Type"]; len(ct) > 0 && ct[0] != "" {
+		contentType = ct[0]
 	}
-	if cd, ok := resp.Header["Content-Disposition"]; ok && len(cd) > 0 {
+	if cd := resp.Header["Content-Disposition"]; len(cd) > 0 && cd[0] != "" {
 		c.Header("Content-Disposition", cd[0])
 	}
-	c.Status(resp.StatusCode)
-	if len(resp.Body) > 0 {
-		_, _ = bytes.NewBuffer(resp.Body).WriteTo(c.Writer)
-	}
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, contentType, resp.Body)
 }
