@@ -59,70 +59,82 @@ cp .env.example .env
 
 ---
 
-## 3. Bootstrap de Redes y Volúmenes
+## 3. Estructura de despliegue
 
-Se necesitan dos redes Docker externas:
+Cada pieza de infraestructura tiene su propio compose en `servicios/`; el orquestador usa el
+`docker-compose.yml` de la raíz. Todos se comunican por redes Docker externas:
+
+| Red | Quién | Para qué |
+|---|---|---|
+| `public-net` | `traefik-public`, orquestador | Borde HTTPS |
+| `mired` | orquestador, `traefik-internal`, Redis, Consul, workers | Tráfico interno (`*.internal`, stream, registro) |
+| `db-net` (interna) | MongoDB, Persistidor | Base de datos |
+
+| Carpeta | Servicio | Antes de levantar |
+|---|---|---|
+| `servicios/consul/` | Consul (registro y KV), API solo en `127.0.0.1:8500` | `cp config/acl-tokens.json.example config/acl-tokens.json` y completar con `uuidgen` |
+| `servicios/redis/` | Redis 7 con AOF, stream `document-events` | — |
+| `servicios/mongodb/` | MongoDB 8 (lo usa el Persistidor) | `cp .env.example .env` con credenciales reales |
+| `servicios/traefik/` | `traefik-public` (80/443) y `traefik-internal` | Certificados TLS: ver `certs/README.md` (mkcert) |
 
 ```bash
 docker network create public-net
 docker network create mired
-```
-
-Traefik-public crea el volumen `traefik-public-acme` para certificados ACME (en `compose.traefik.yml`). Redis crea el volumen `redis-data`.
-
----
-
-## 4. Despliegue con Docker Compose (modo producción)
-
-El `compose.yml` es paraguas e incluye: `compose.orchestrator.yml`, `compose.redis.yml`, `compose.traefik.yml`.
-
-```bash
-cp .env.example .env  # ajustar valores
-docker network create public-net mired || true
-docker compose up --build -d
-```
-
-Qué se levanta:
-
-- **traefik-public** (v3.6): borde en `80:80`/`443:443`, red `public-net`. Enruta `Host(${PUBLIC_HOST}) && PathPrefix(/api/v1)`.
-- **traefik-internal** (v3.6): red `mired`, expone aliases `extractor.internal`, `summarizer.internal`, `persister.internal`. Provider docker con `exposedByDefault=false`.
-- **redis**: Redis 7 con AOF (`--appendonly yes`), solo en `mired`. Stream `document-events`.
-- **orchestrator**: Go multi-stage (distroless, nonroot), en `public-net` + `mired`, **sin puertos al host**. Healthcheck reusa el binario (`/app/server healthcheck`).
-
-Comprobar estado:
-
-```bash
-docker compose ps
-docker compose logs -f orchestrator
-curl -s https://api.example.com/api/v1/health  # o vía host local
+docker network create --internal db-net
 ```
 
 ---
 
-## 5. Smoke Local con Mocks (#20)
-
-Para levantar el flujo end-to-end **sin los repos externos** (Extractor/Resumidor/Persistidor reales), usar el override `compose.mocks.yml`. Los mocks se registran en `traefik-internal` con las mismas URLs internas.
+## 4. Despliegue con Docker Compose
 
 ```bash
-docker network create public-net mired || true
-docker compose -f compose.yml -f compose.mocks.yml up --build -d
+(cd servicios/consul  && docker compose up -d)
+(cd servicios/redis   && docker compose up -d)
+(cd servicios/mongodb && docker compose up -d)
+(cd servicios/traefik && docker compose up -d)
+
+cp .env.example .env   # ajustar PUBLIC_HOST y PUBLIC_BASE_URL
+docker compose up -d --build
 ```
 
-El orquestador queda expuesto internamente en `http://orchestrator:8080` (mired). Probar extract con resumen:
+El orquestador queda en `public-net` + `mired`, **sin puertos al host**. Al arrancar se registra en
+Consul (check HTTP a `/ready`) y al apagarse se da de baja. Comprobar:
 
 ```bash
-cat > /tmp/contrato.pdf << 'PDF'
-%PDF-1.7
-PDF
+docker compose ps                                   # orchestrator: healthy
+docker compose logs orchestrator | grep "registrado en Consul"
+curl -s "http://localhost:8500/v1/health/service/pdf-extractext-orquestador?passing"
+curl -sk https://${PUBLIC_HOST}/api/v1/health
+```
 
+Las sondas `/health`, `/healthz` y `/ready` no se publican hacia afuera: las usan Docker y Consul.
+
+---
+
+## 5. Smoke Local con Mocks
+
+`compose.mocks.yml` agrega mocks de los tres workers detrás de `traefik-internal`, con los mismos
+nombres internos que en producción. El mock del Persistidor consume el stream de verdad, así que el
+camino publicación → persistencia → lectura se prueba completo. Requiere Redis y Traefik levantados
+(sección 4).
+
+```bash
+docker compose -f docker-compose.yml -f compose.mocks.yml up -d --build
+```
+
+Probar una ingesta con resumen desde la red interna:
+
+```bash
+printf '%%PDF-1.7\n' > /tmp/contrato.pdf
 docker run --rm --network mired -v /tmp/contrato.pdf:/tmp/contrato.pdf:ro \
-  curlimages/curl:latest -s -X POST http://orchestrator:8080/api/v1/documents/extract \
+  curlimages/curl:8.11.1 -s -X POST http://orchestrator:8080/api/v1/documents/extract \
   -F "document=@/tmp/contrato.pdf" -F "summarize=true"
 ```
 
-Respuesta esperada (`202`): `document_id`, `delivery_status=INGESTED`, `summary_status=RESOLVED`, `summary`, `processing_time_ms`, `extraction_time_ms`, `summary_time_ms`.
+Respuesta esperada (`202`): `document_id`, `delivery_status=INGESTED`, `summary_status=RESOLVED`,
+`summary`, `processing_time_ms`, `extraction_time_ms`, `summary_time_ms`.
 
-Casos útiles de prueba (controlados por nombre de archivo en el Extractor mock):
+Casos de prueba (los decide el nombre del archivo en el Extractor mock):
 
 | Archivo | Comportamiento |
 |---|---|
@@ -133,7 +145,8 @@ Casos útiles de prueba (controlados por nombre de archivo en el Extractor mock)
 | `escaneado.pdf` | 422 `unsupported_features` |
 | `lento.pdf` | Demora (`EXTRACTOR_MOCK_DELAY_MS`) |
 
-Resumidor mock: texto que contenga `[demasiado-largo]` → 422 `document_too_long` (mapeado a 502 en API pública). Texto con `[resumen-vacio]` → summary vacío (rechazado por caso de uso antes de publicar).
+Resumidor mock: un texto que contenga `[demasiado-largo]` → 422 `document_too_long` (502 en la API
+pública); con `[resumen-vacio]` → resumen vacío, rechazado por el caso de uso antes de publicar.
 
 ---
 
@@ -154,7 +167,7 @@ La API pública vive bajo `/api/v1`. Ver **[docs/contracts/openapi.yaml](docs/co
 | `GET` | `/health` | Liveness |
 | `GET` | `/ready` | Readiness (Redis + disponibilidad general) |
 
-Mapeo dominio→HTTP (en `internal/api/errors.go`): `invalid_request`→400, `document_not_found`/`summary_not_available`→404, `summary_pending`/`summary_already_resolved`/`checksum_conflict`→409, `extraction_failed`→422, `payload_too_large`→413, `unsupported_media_type`→415, `extractor_unavailable`/`summary_failed`→5xx según caso, `concurrency_limited`→429 (+`Retry-After`).
+Mapeo código→HTTP (tabla única en `internal/httpstatus`, compartida por la API y la web): `invalid_request`→400, `document_not_found`/`summary_not_available`→404, `summary_pending`/`summary_already_resolved`/`checksum_conflict`→409, `payload_too_large`→413, `unsupported_media_type`→415, `extraction_failed`→422, `rate_limited`/`concurrency_limited`→429 (+`Retry-After`), `summary_failed`→502, `extractor_unavailable`/`persister_unavailable`→503, `internal`→500.
 
 ---
 
@@ -163,7 +176,9 @@ Mapeo dominio→HTTP (en `internal/api/errors.go`): `invalid_request`→400, `do
 - **Casos de uso**: `internal/application/` (`extract`, `summary`, `proxy`, `gates`)
 - **Puertos/DOMINIO**: `internal/domain/` (interfaces, errores, tipos, eventos)
 - **Adaptadores**: `internal/adapters/http*`, `internal/adapters/redisstreams`, `internal/adapters/consul`
-- **API**: `internal/api/` (gin + middlewares: recovery, correlation, access log, rate-limit, concurrency)
+- **API**: `internal/api/` (gin + middlewares: correlation, access log, recovery, rate-limit, concurrency)
+- **Web**: `internal/web/` (páginas HTML server-side sobre los mismos casos de uso)
+- **Errores HTTP**: `internal/httpstatus/` (tabla única código → status)
 - **Composición**: `cmd/server/main.go` (fail-fast por env críticas, graceful shutdown)
 
 Contratos clave:
@@ -173,18 +188,20 @@ Contratos clave:
 - **Stream de eventos**: [`docs/contracts/events.md`](docs/contracts/events.md) (`original`, `summary_resolved`, campos en `payload` JSON + `document_id` como clave)
 - **Delta Persistidor**: [`docs/contracts/delta-persister.md`](docs/contracts/delta-persister.md) (cambios reconocidos respecto a blueprint)
 
-Decisiones de arquitectura: [`docs/adr/`](docs/adr/) (ADR-0001..0007). `ARCHITECTURE_ORCHESTRATOR.md` está excluido de git (solo disco).
+Decisiones de arquitectura: [`docs/adr/`](docs/adr/) (ADR-0001..0008). `ARCHITECTURE_ORCHESTRATOR.md` está excluido de git (solo disco).
 
 ---
 
 ## 8. Desarrollo Local / Tests
 
+Los mismos chequeos que corre CI (`.github/workflows/ci.yml`):
+
 ```bash
-# Compilar, vet, tests y formato
-go build ./...
+test -z "$(gofmt -l cmd internal mocks)"
 go vet ./...
-go test ./... -count=1
-test -z "$(gofmt -l .)"
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -checks all,-ST1000 ./...
+go test -race -count=1 ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
 # Tests con verbosidad
 go test -v ./internal/application ./internal/api ./internal/api/middleware
@@ -197,9 +214,10 @@ TDD estricto (rojo → verde). Sin comentarios innecesarios. Vocabulario según 
 ## 9. Limpieza
 
 ```bash
-docker compose down -v  # detiene y borra volúmenes
-docker compose -f compose.yml -f compose.mocks.yml down -v
-docker network rm public-net mired 2>/dev/null || true
+docker compose -f docker-compose.yml -f compose.mocks.yml down
+for dir in servicios/*/; do (cd "$dir" && docker compose down); done
+docker network rm public-net mired db-net 2>/dev/null || true
+# Agregar -v a cada `down` borra también los volúmenes (datos de Redis, Mongo y Consul).
 ```
 
 ---
