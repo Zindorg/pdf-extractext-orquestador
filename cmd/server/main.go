@@ -199,15 +199,16 @@ func serve(server *http.Server, logger *slog.Logger, registrar *consul.Registrar
 
 	registerCtx, cancelRegister := context.WithCancel(ctx)
 	defer cancelRegister()
+	registerDone := make(chan struct{})
 	if registrar != nil {
 		go func() {
-			err := registrar.RegisterWithRetry(registerCtx, func(err error) {
-				logger.Warn("no se pudo registrar en Consul, se reintenta", "error", err)
-			})
-			if err == nil {
-				logger.Info("registrado en Consul", "service_id", registrar.ServiceID())
-			}
+			defer close(registerDone)
+			registrar.Maintain(registerCtx, consulRenewInterval,
+				func() { logger.Info("registrado en Consul", "service_id", registrar.ServiceID()) },
+				func(err error) { logger.Warn("no se pudo registrar en Consul, se reintenta", "error", err) })
 		}()
+	} else {
+		close(registerDone)
 	}
 
 	select {
@@ -217,7 +218,10 @@ func serve(server *http.Server, logger *slog.Logger, registrar *consul.Registrar
 		logger.Info("apagando ordenadamente")
 	}
 
+	// Primero se corta la renovación y se espera a que termine: si no, un registro en vuelo podría
+	// llegar a Consul después de la baja.
 	cancelRegister()
+	<-registerDone
 	if registrar != nil {
 		deregisterCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := registrar.Deregister(deregisterCtx); err != nil {
@@ -234,6 +238,10 @@ func serve(server *http.Server, logger *slog.Logger, registrar *consul.Registrar
 	logger.Info("apagado completo")
 	return nil
 }
+
+// consulRenewInterval es cada cuánto se renueva el registro en Consul, para reaparecer si Consul lo
+// dio de baja (DeregisterCriticalServiceAfter es 1 minuto).
+const consulRenewInterval = 30 * time.Second
 
 // Timeouts del servidor HTTP. ReadTimeout cubre leer un documento de 10 MiB por una conexión lenta.
 const (

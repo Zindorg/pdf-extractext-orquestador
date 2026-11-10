@@ -122,25 +122,42 @@ func (r *Registrar) put(ctx context.Context, path string, body []byte) error {
 	return nil
 }
 
-// RegisterWithRetry reintenta el registro con espera creciente hasta lograrlo o hasta que ctx se
-// cancele. Consul caído no impide que el servicio arranque: se anuncia en cuanto Consul vuelve.
-func (r *Registrar) RegisterWithRetry(ctx context.Context, onError func(error)) error {
-	wait := time.Second
+// Maintain mantiene la instancia registrada hasta que ctx se cancele. Registra al arrancar (con
+// espera creciente si Consul no responde) y después vuelve a registrar cada interval: el registro es
+// idempotente, y así la instancia reaparece sola si Consul la dio de baja —por ejemplo, tras más de un
+// minuto con /ready en 503 (DeregisterCriticalServiceAfter) o si Consul perdió su estado—.
+// onRegistered se llama cada vez que se recupera el registro, no en cada renovación.
+func (r *Registrar) Maintain(ctx context.Context, interval time.Duration, onRegistered func(), onError func(error)) {
+	registered := false
+	retry := time.Second
 	for {
-		err := r.Register(ctx)
-		if err == nil {
-			return nil
+		wait := interval
+		if err := r.Register(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			registered = false
+			if onError != nil {
+				onError(err)
+			}
+			wait = retry
+			if retry < 30*time.Second {
+				retry *= 2
+			}
+		} else {
+			if !registered && onRegistered != nil {
+				onRegistered()
+			}
+			registered = true
+			retry = time.Second
 		}
-		if onError != nil {
-			onError(err)
-		}
+
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(wait):
-		}
-		if wait < 30*time.Second {
-			wait *= 2
+			timer.Stop()
+			return
+		case <-timer.C:
 		}
 	}
 }
