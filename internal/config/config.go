@@ -24,6 +24,13 @@ type Config struct {
 	ExtractMaxInFlight int
 	SummaryMaxInFlight int
 	LogLevel           string
+
+	// Registro en Consul. ConsulAddr vacía desactiva el registro (desarrollo y tests).
+	ConsulAddr     string
+	ConsulToken    string
+	ServiceName    string
+	ServiceAddress string
+	Version        string
 }
 
 // Load lee la configuración del entorno del proceso y la valida. Falla rápido: si falta o es inválida
@@ -97,7 +104,20 @@ func load(getenv func(string) string) (Config, error) {
 		cfg.LogLevel = "info"
 	}
 
+	cfg.ConsulAddr = strings.TrimSpace(getenv("CONSUL_HTTP_ADDR"))
+	cfg.ConsulToken = strings.TrimSpace(getenv("CONSUL_HTTP_TOKEN"))
+	cfg.ServiceName = stringVar(getenv, "CONSUL_SERVICE_NAME", "pdf-extractext-orquestador")
+	cfg.ServiceAddress = strings.TrimSpace(getenv("SERVICE_ADDRESS"))
+	cfg.Version = stringVar(getenv, "VERSION", "dev")
+
 	return cfg, nil
+}
+
+func stringVar(getenv func(string) string, name, fallback string) string {
+	if value := strings.TrimSpace(getenv(name)); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func intVar(getenv func(string) string, name string, fallback int) (int, error) {

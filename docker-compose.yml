@@ -1,12 +1,24 @@
 services:
   orchestrator:
-    image: pdf-extractext-orquestador:${VERSION}
-    build: ../pdf-extractext-orquestador
+    image: pdf-extractext-orquestador:${VERSION:-dev}
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
     restart: unless-stopped
+    # Más que el shutdownGrace del servicio (15 s): Docker manda SIGKILL a los 10 s por defecto.
+    stop_grace_period: 20s
+    healthcheck:
+      # distroless no trae shell ni curl: el propio binario hace de sonda contra /health.
+      test: ["CMD", "/app/server", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     environment:
       - TZ=${TZ:-America/Argentina/Mendoza}
+      - VERSION=${VERSION:-dev}
       - HTTP_PORT=8080
-      - PUBLIC_HOST=${PUBLIC_HOST:?definir PUBLIC_HOST}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:?definir PUBLIC_BASE_URL}
       - EXTRACTOR_URL=http://extractor.internal
       - SUMMARIZER_URL=http://summarizer.internal
@@ -14,6 +26,10 @@ services:
       - REDIS_ADDR=redis:6379
       - STREAM_NAME=${STREAM_NAME:-document-events}
       - TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
+      # Registro en Consul (servicios/consul). Vacía CONSUL_HTTP_ADDR para no registrarse.
+      - CONSUL_HTTP_ADDR=${CONSUL_HTTP_ADDR-http://consul:8500}
+      - CONSUL_HTTP_TOKEN=${CONSUL_HTTP_TOKEN:-}
+      - SERVICE_ADDRESS=orchestrator
     networks:
       - public-net
       - mired
@@ -42,6 +58,3 @@ networks:
     external: true
   mired:
     external: true
-
-volumes:
-  redis-data:

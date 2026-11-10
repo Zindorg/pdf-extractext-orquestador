@@ -132,3 +132,33 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConsulDesactivadoPorDefecto(t *testing.T) {
+	cfg, err := load(envMap(validEnv(nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConsulAddr != "" {
+		t.Errorf("ConsulAddr = %q, quería vacío", cfg.ConsulAddr)
+	}
+	if cfg.ServiceName != "pdf-extractext-orquestador" || cfg.Version != "dev" {
+		t.Errorf("defaults inesperados: name=%q version=%q", cfg.ServiceName, cfg.Version)
+	}
+}
+
+func TestLoadConsul(t *testing.T) {
+	cfg, err := load(envMap(validEnv(map[string]string{
+		"CONSUL_HTTP_ADDR":    "http://consul:8500",
+		"CONSUL_HTTP_TOKEN":   "tok",
+		"CONSUL_SERVICE_NAME": "orq",
+		"SERVICE_ADDRESS":     "orchestrator",
+		"VERSION":             "1.0.0",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConsulAddr != "http://consul:8500" || cfg.ConsulToken != "tok" || cfg.ServiceName != "orq" ||
+		cfg.ServiceAddress != "orchestrator" || cfg.Version != "1.0.0" {
+		t.Errorf("config de Consul inesperada: %+v", cfg)
+	}
+}

@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/consul"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/http_extractor"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/http_persister"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/http_summarizer"
@@ -117,28 +120,82 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	return serve(server, logger)
+	return serve(server, logger, newRegistrar(cfg, logger))
 }
 
-// serve levanta el servidor y lo apaga ordenadamente al recibir SIGINT o SIGTERM. El apagado deja
-// terminar las peticiones en vuelo antes de salir.
-func serve(server *http.Server, logger interface{ Info(string, ...any) }) error {
+// newRegistrar arma el registro en Consul, o devuelve nil si CONSUL_HTTP_ADDR no está definida.
+func newRegistrar(cfg config.Config, logger *slog.Logger) *consul.Registrar {
+	if cfg.ConsulAddr == "" {
+		logger.Info("registro en Consul desactivado: CONSUL_HTTP_ADDR vacía")
+		return nil
+	}
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		hostname = "local"
+	}
+	address := cfg.ServiceAddress
+	if address == "" {
+		address = hostname
+	}
+	return consul.New(cfg.ConsulAddr, cfg.ConsulToken, consul.Registration{
+		// Nombre + hostname: cada réplica (cada contenedor) es una instancia distinta en Consul.
+		ID:        cfg.ServiceName + "-" + hostname,
+		Name:      cfg.ServiceName,
+		Address:   address,
+		Port:      cfg.HTTPPort,
+		Version:   cfg.Version,
+		CheckPath: "/ready",
+	})
+}
+
+// serve levanta el servidor, lo anuncia en Consul y lo apaga ordenadamente al recibir SIGINT o
+// SIGTERM. Al apagar, primero se da de baja en Consul —para que nadie nuevo lo descubra— y después
+// deja terminar las peticiones en vuelo.
+func serve(server *http.Server, logger *slog.Logger, registrar *consul.Registrar) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Se escucha antes de registrar: Consul no debe anunciar una instancia que todavía no atiende.
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return err
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("servidor escuchando", "addr", server.Addr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
+
+	registerCtx, cancelRegister := context.WithCancel(ctx)
+	defer cancelRegister()
+	if registrar != nil {
+		go func() {
+			err := registrar.RegisterWithRetry(registerCtx, func(err error) {
+				logger.Warn("no se pudo registrar en Consul, se reintenta", "error", err)
+			})
+			if err == nil {
+				logger.Info("registrado en Consul", "service_id", registrar.ServiceID())
+			}
+		}()
+	}
 
 	select {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
 		logger.Info("apagando ordenadamente")
+	}
+
+	cancelRegister()
+	if registrar != nil {
+		deregisterCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := registrar.Deregister(deregisterCtx); err != nil {
+			logger.Warn("no se pudo dar de baja en Consul", "error", err)
+		}
+		cancel()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
