@@ -633,10 +633,12 @@ components:
         No es lo mismo que el `code` de una advertencia (`warnings[].code`), que es un vocabulario abierto y
         describe problemas no fatales en lugar de un fallo.
 
-        `rate_limited` lo emite el borde (Traefik), no este servicio: el servicio no lleva el registro de
-        peticiones que necesitaría para decidir un límite por cliente, y con más de una réplica ese límite
-        sería además inconsistente (ADR-0005, ADR-0007). Está declarado para que un cliente que lo reciba
-        sepa interpretarlo, no porque el servicio lo produzca.
+        `rate_limited` lo emiten el borde (Traefik) y el límite por IP de cada réplica (RATE_LIMIT_PER_MINUTE).
+        También se reenvía cuando el Persistidor limita al Orquestador. El límite es por réplica: con más
+        de una, el total admitido es proporcional (ADR-0005, ADR-0007).
+
+        `persister_unavailable` (503) es un fallo de infraestructura del Persistidor —caído, sin respuesta o
+        con un 5xx—, no un problema de la petición: el cliente puede reintentar.
 
         Cada valor tiene asignada la respuesta donde se usa, y cada respuesta de error usa uno de estos
         valores. Los dos últimos (`extractor_unavailable` y `summary_pending`) cubren dos estados que el
@@ -655,6 +657,7 @@ components:
         - rate_limited
         - concurrency_limited
         - extractor_unavailable
+        - persister_unavailable
         - summary_pending
         - internal
 

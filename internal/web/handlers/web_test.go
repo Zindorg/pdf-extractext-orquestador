@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -81,7 +82,7 @@ func (e *env) upload(filename string, content []byte, summarize bool) *httptest.
 }
 
 func notFound() error {
-	return &domain.Error{Code: "document_not_found", Message: "no existe"}
+	return domain.NewError("document_not_found", "no existe")
 }
 
 const docJSON = `{"document_id":"` + testID + `","filename":"informe.pdf","mime_type":"application/pdf",
@@ -136,7 +137,7 @@ func TestSubidaSinArchivoVacioYGrande(t *testing.T) {
 
 func TestSubidaConErrorDeDominioMuestraElFormularioConMensaje(t *testing.T) {
 	e := newEnv(t)
-	e.extract.err = &domain.Error{Code: "unsupported_media_type", Message: "no es un PDF"}
+	e.extract.err = domain.NewError("unsupported_media_type", "no es un PDF")
 	rec := e.upload("a.pdf", []byte("no soy pdf"), true)
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("estado %d", rec.Code)
@@ -265,7 +266,7 @@ func TestAcciones(t *testing.T) {
 	if got := rec.Header().Get("Location"); rec.Code != 303 || got != "/documents/"+testID+"?notice=summary_requested&wait=summary&n=0" {
 		t.Fatalf("resumen: %d %q", rec.Code, got)
 	}
-	e.summary.err = &domain.Error{Code: "summary_pending", Message: "ya en curso"}
+	e.summary.err = domain.NewError("summary_pending", "ya en curso")
 	rec = e.post("/documents/" + testID + "/summary")
 	if got := rec.Header().Get("Location"); rec.Code != 303 || got != "/documents/"+testID+"?error=summary_pending" {
 		t.Fatalf("resumen con error: %d %q", rec.Code, got)
@@ -307,7 +308,7 @@ func TestDescargaCopiaCabecerasYCuerpo(t *testing.T) {
 
 func TestDescargaFallidaMuestraPagina(t *testing.T) {
 	e := newEnv(t)
-	e.proxy.err = &domain.Error{Code: "summary_not_available", Message: "sin resumen"}
+	e.proxy.err = domain.NewError("summary_not_available", "sin resumen")
 	rec := e.get("/documents/" + testID + "/download/summary")
 	if rec.Code < 400 || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), "Resumen no disponible") {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
@@ -332,5 +333,13 @@ func TestNoRoute(t *testing.T) {
 	rec = e.get("/api/v1/nada")
 	if rec.Code != 404 || strings.Contains(rec.Body.String(), "<html") {
 		t.Fatalf("api: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDetallePersistidorCaidoResponde503(t *testing.T) {
+	e := newEnv(t)
+	e.proxy.err = fmt.Errorf("%w: llamar al Persistidor: connection refused", domain.ErrPersisterUnavailable)
+	if rec := e.get("/documents/" + testID); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("estado %d, quería 503", rec.Code)
 	}
 }

@@ -72,7 +72,7 @@ func (c *Client) Do(ctx context.Context, req domain.PersisterRequest) (domain.Pe
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return domain.PersisterResponse{}, fmt.Errorf("llamar al Persistidor: %w", err)
+		return domain.PersisterResponse{}, unavailable("llamar al Persistidor", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -93,9 +93,10 @@ func (c *Client) Do(ctx context.Context, req domain.PersisterRequest) (domain.Pe
 }
 
 // translate convierte un error del Persistidor en uno de dominio. El código que declara el otro
-// servicio manda cuando es del vocabulario público; si el cuerpo no se puede leer, el status decide
-// solo donde el vocabulario no deja margen. Un 409 depende de la ruta (download/summary vs restore),
-// así que sin código no se inventa: se devuelve sin tipar y la capa api responde 500.
+// servicio manda cuando es del vocabulario público; si no lo trae, el status decide solo donde el
+// vocabulario no deja margen. Un 5xx es un fallo de infraestructura del Persistidor
+// (persister_unavailable). Un 409 depende de la ruta (download/summary vs restore), así que sin código
+// no se inventa: se devuelve sin tipar y la capa api responde 500.
 func translate(status int, body []byte) error {
 	var envelope struct {
 		Code    string `json:"code"`
@@ -107,13 +108,26 @@ func translate(status int, body []byte) error {
 		}
 	}
 
-	switch status {
-	case http.StatusBadRequest:
+	switch {
+	case status == http.StatusBadRequest:
 		return domain.ErrInvalidRequest
-	case http.StatusNotFound:
+	case status == http.StatusNotFound:
 		return domain.ErrDocumentNotFound
+	case status == http.StatusTooManyRequests:
+		return domain.ErrRateLimited
+	case status >= http.StatusInternalServerError:
+		return unavailable(fmt.Sprintf("status %d", status), nil)
 	}
 	return fmt.Errorf("respuesta del Persistidor sin código reconocible (status %d)", status)
+}
+
+// unavailable envuelve la causa en ErrPersisterUnavailable: la capa HTTP responde 503 con el código
+// público y el detalle queda para el log.
+func unavailable(what string, err error) error {
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", domain.ErrPersisterUnavailable, what, err)
+	}
+	return fmt.Errorf("%w: %s", domain.ErrPersisterUnavailable, what)
 }
 
 // FindActiveByChecksum consulta al Persistidor por checksum activo. Un 404 significa que no hay
@@ -128,7 +142,7 @@ func (c *Client) FindActiveByChecksum(ctx context.Context, checksum domain.Check
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return domain.StoredDocumentSummary{}, false, fmt.Errorf("llamar al Persistidor: %w", err)
+		return domain.StoredDocumentSummary{}, false, unavailable("llamar al Persistidor", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

@@ -208,7 +208,7 @@ func TestExtractUseCasePublishesNothingWhenExtractionFails(t *testing.T) {
 			Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes)})
 
 		var domainErr *domain.Error
-		if !errors.As(err, &domainErr) || domainErr.Code != "extraction_failed" || domainErr.Reason != domain.ReasonEncryptedPDF {
+		if !errors.As(err, &domainErr) || domainErr.Code() != "extraction_failed" || domainErr.Reason() != domain.ReasonEncryptedPDF {
 			t.Fatalf("Execute() = %v, quería extraction_failed/encrypted_pdf", err)
 		}
 		if len(publisher.events) != 0 {

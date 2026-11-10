@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/httpstatus"
 )
 
 // UserMessage devuelve un mensaje legible en español para un error de dominio.
@@ -19,15 +20,15 @@ func UserMessage(err error) string {
 		return "Ocurrió un error inesperado. Intentá nuevamente."
 	}
 
-	switch de.Code {
+	switch de.Code() {
 	case "invalid_request":
-		return de.Message
+		return de.Message()
 	case "payload_too_large":
 		return "El archivo supera el tamaño máximo permitido."
 	case "unsupported_media_type":
 		return "El archivo no es un PDF válido (debe comenzar con %PDF-)."
 	case "extraction_failed":
-		if de.Reason == domain.ReasonEncryptedPDF || de.Reason == domain.ReasonPasswordProtected {
+		if de.Reason() == domain.ReasonEncryptedPDF || de.Reason() == domain.ReasonPasswordProtected {
 			return "El PDF está protegido con contraseña."
 		}
 		return "No se pudo extraer el documento."
@@ -37,6 +38,8 @@ func UserMessage(err error) string {
 		return "No se pudo generar el resumen. Probá de nuevo más tarde."
 	case "extractor_unavailable":
 		return "El servicio de extracción no está disponible en este momento. Probá nuevamente."
+	case "persister_unavailable":
+		return "El servicio de documentos no respondió. Probá de nuevo en unos segundos."
 	case "document_not_found":
 		return "El documento no está disponible."
 	case "summary_not_available":
@@ -56,34 +59,17 @@ func UserMessage(err error) string {
 	}
 }
 
-// StatusCode intenta mapear el código de dominio a un status HTTP para casos donde sea necesario.
+// StatusCode devuelve el status HTTP de un error de dominio con la misma tabla que la API
+// (httpstatus); un error que no es de dominio o un código desconocido es 500.
 func StatusCode(err error) int {
 	var de *domain.Error
-	if ok := isDomainErr(err, &de); !ok {
+	if !isDomainErr(err, &de) {
 		return http.StatusInternalServerError
 	}
-	switch de.Code {
-	case "invalid_request":
-		return http.StatusBadRequest
-	case "payload_too_large":
-		return http.StatusRequestEntityTooLarge
-	case "unsupported_media_type":
-		return http.StatusUnsupportedMediaType
-	case "extraction_failed":
-		return http.StatusUnprocessableEntity
-	case "concurrency_limited", "rate_limited":
-		return http.StatusTooManyRequests
-	case "summary_failed":
-		return http.StatusBadGateway
-	case "extractor_unavailable":
-		return http.StatusServiceUnavailable
-	case "document_not_found", "summary_not_available":
-		return http.StatusNotFound
-	case "summary_pending", "summary_already_resolved", "checksum_conflict":
-		return http.StatusConflict
-	default:
-		return http.StatusInternalServerError
+	if status, ok := httpstatus.ForCode(de.Code()); ok {
+		return status
 	}
+	return http.StatusInternalServerError
 }
 
 // isDomainErr reconoce un error de dominio aunque venga envuelto: los adaptadores lo envuelven con
