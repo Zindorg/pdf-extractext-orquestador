@@ -13,9 +13,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
-	weberrors "github.com/Zindorg/pdf-extractext-orquestador/internal/web/errors"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/render"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/view"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/weberrors"
 )
 
 // Los casos de uso se piden como interfaces mínimas: los de application las cumplen y los tests

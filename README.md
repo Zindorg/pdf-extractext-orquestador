@@ -162,7 +162,7 @@ Mapeo dominio→HTTP (en `internal/api/errors.go`): `invalid_request`→400, `do
 
 - **Casos de uso**: `internal/application/` (`extract`, `summary`, `proxy`, `gates`)
 - **Puertos/DOMINIO**: `internal/domain/` (interfaces, errores, tipos, eventos)
-- **Adaptadores**: `internal/adapters/http_*`, `internal/adapters/redis_streams`
+- **Adaptadores**: `internal/adapters/http*`, `internal/adapters/redisstreams`, `internal/adapters/consul`
 - **API**: `internal/api/` (gin + middlewares: recovery, correlation, access log, rate-limit, concurrency)
 - **Composición**: `cmd/server/main.go` (fail-fast por env críticas, graceful shutdown)
 

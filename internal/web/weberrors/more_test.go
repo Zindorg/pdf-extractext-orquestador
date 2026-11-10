@@ -1,4 +1,4 @@
-package errors
+package weberrors
 
 import (
 	"testing"

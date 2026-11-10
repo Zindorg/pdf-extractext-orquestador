@@ -1,5 +1,5 @@
-// Package errors mapea los códigos de error del Orquestador a mensajes en español para la capa web.
-package errors
+// Package weberrors mapea los códigos de error del Orquestador a mensajes en español para la capa web.
+package weberrors
 
 import (
 	stderrors "errors"

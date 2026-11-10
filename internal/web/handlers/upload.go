@@ -11,8 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
-	weberrors "github.com/Zindorg/pdf-extractext-orquestador/internal/web/errors"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/view"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/weberrors"
 )
 
 // multipartOverhead es el margen sobre el tope del archivo para el resto del formulario multipart.

@@ -1,6 +1,6 @@
-// Package http_summarizer implementa el cliente HTTP del Resumidor contra su contrato en
+// Package httpsummarizer implementa el cliente HTTP del Resumidor contra su contrato en
 // docs/contracts/workers.md.
-package http_summarizer
+package httpsummarizer
 
 import (
 	"bytes"

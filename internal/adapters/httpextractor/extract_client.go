@@ -1,6 +1,6 @@
-// Package http_extractor implementa el cliente HTTP del Extractor contra su contrato en
+// Package httpextractor implementa el cliente HTTP del Extractor contra su contrato en
 // docs/contracts/workers.md.
-package http_extractor
+package httpextractor
 
 import (
 	"bytes"

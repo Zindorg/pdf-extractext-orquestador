@@ -18,10 +18,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/consul"
-	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/http_extractor"
-	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/http_persister"
-	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/http_summarizer"
-	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/redis_streams"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpextractor"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httppersister"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpsummarizer"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/redisstreams"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/api"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/api/middleware"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/application"
@@ -84,11 +84,11 @@ func run() error {
 	// Todo lo que use el logger por defecto (Recovery, librerías) sale en el mismo JSON.
 	slog.SetDefault(logger)
 
-	extractor := http_extractor.New(cfg.ExtractorURL, cfg.ExtractorTimeout)
-	summarizer := http_summarizer.New(cfg.SummarizerURL, cfg.SummarizerTimeout)
-	persister := http_persister.New(cfg.PersisterURL, cfg.PersisterTimeout).
+	extractor := httpextractor.New(cfg.ExtractorURL, cfg.ExtractorTimeout)
+	summarizer := httpsummarizer.New(cfg.SummarizerURL, cfg.SummarizerTimeout)
+	persister := httppersister.New(cfg.PersisterURL, cfg.PersisterTimeout).
 		WithMaxResponseBytes(cfg.PersisterMaxResponseBytes)
-	publisher, err := redis_streams.New(redis_streams.Options{
+	publisher, err := redisstreams.New(redisstreams.Options{
 		URL:    cfg.RedisURL,
 		Stream: cfg.StreamName,
 		MaxLen: cfg.StreamMaxLen,

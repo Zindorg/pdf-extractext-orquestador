@@ -1,6 +1,6 @@
-// Package http_persister implementa el proxy hacia el Persistidor: reenvía las rutas de lectura y
+// Package httppersister implementa el proxy hacia el Persistidor: reenvía las rutas de lectura y
 // de borrado sin reescribir el prefijo /api/v1 (ADR-0005).
-package http_persister
+package httppersister
 
 import (
 	"context"

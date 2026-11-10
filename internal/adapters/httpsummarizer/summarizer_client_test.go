@@ -1,4 +1,4 @@
-package http_summarizer
+package httpsummarizer
 
 import (
 	"encoding/json"
