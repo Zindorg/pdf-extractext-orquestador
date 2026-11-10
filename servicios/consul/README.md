@@ -1,173 +1,84 @@
-### Listar servicios
-```bash
-curl http://localhost:8500/v1/catalog/services | python3 -m json.tool
+# Consul
 
-# Ver health del servicio
-curl http://localhost:8500/v1/health/service/microservicio | python3 -m json.tool
-```
+Registro de servicios y KV del sistema. Un solo servidor en la red `mired`; la API y la UI se publican
+solo en `127.0.0.1:8500` del host.
 
-### JSON
-```json
-{
-   "service": {
-     "name": "microservicio",
-     "port": 8080,
-     "check": {
-       "id": "microservicio-http",
-       "name": "microservicio HTTP health check",
-       "http": "http://localhost:8080/health",
-       "interval": "10s",
-       "timeout": "2s"
-     }
-   }
- }
-```
-
-### Leer una clave (KV)
+## Levantar
 
 ```bash
-# Leer una clave específica (devuelve el valor en base64 por defecto)
-curl http://localhost:8500/v1/kv/mi-clave
-
-# Leer con el valor decodificado en texto plano
-curl http://localhost:8500/v1/kv/mi-clave?raw
-
-# Leer todas las claves bajo un prefijo (recursivo)
-curl http://localhost:8500/v1/kv/mi-prefijo/?recurse
-
-# Leer solo los nombres de las claves (sin valores)
-curl http://localhost:8500/v1/kv/mi-prefijo/?keys
+cp config/acl-tokens.json.example config/acl-tokens.json   # completar con: uuidgen
+docker network create mired   # si no existe
+docker compose up -d
 ```
 
-### Ejemplo práctico de respuesta (sin `?raw`)
+`config/acl-tokens.json` y `data/` están en `.gitignore`: el token de management no se versiona. Consul
+carga todos los `.json` de `config/`, así que el token se suma a `consul.json` sin tocarlo.
 
-```json
-[
-  {
-    "LockIndex": 0,
-    "Key": "mi-clave",
-    "Flags": 0,
-    "Value": "SG9sYSBNdW5kbyE=",
-    "CreateIndex": 123,
-    "ModifyIndex": 123
-  }
-]
-```
+Con `default_policy: allow` las lecturas y los registros funcionan sin token. Para escribir con el token
+de management: `-H "X-Consul-Token: $CONSUL_HTTP_TOKEN"`.
 
-El campo `Value` está en **base64**. Para decodificarlo sin `?raw`:
+## Servicios
 
 ```bash
-curl -s http://localhost:8500/v1/kv/mi-clave | python3 -c "import sys,json,base64; [print(base64.b64decode(i['Value']).decode()) for i in json.load(sys.stdin)]"
+# Catálogo
+curl -s http://localhost:8500/v1/catalog/services | python3 -m json.tool
+
+# Instancias sanas de un servicio
+curl -s "http://localhost:8500/v1/health/service/pdf-extractext-orquestador?passing" | python3 -m json.tool
+
+# Servicios y checks del agente
+curl -s http://localhost:8500/v1/agent/services | python3 -m json.tool
+curl -s http://localhost:8500/v1/agent/checks | python3 -m json.tool
+
+# Dar de baja una instancia
+curl -X PUT http://localhost:8500/v1/agent/service/deregister/<service-id>
 ```
 
-### Otros endpoints útiles del KV
+### Registrar un servicio
 
-| Operación | Método | Endpoint |
-|---|---|---|
-| Leer | `GET` | `/v1/kv/:key` |
-| Crear/Actualizar | `PUT` | `/v1/kv/:key` |
-| Eliminar | `DELETE` | `/v1/kv/:key` |
-| Eliminar recursivo | `DELETE` | `/v1/kv/:prefix?recurse` |
-
-### Crear una clave de ejemplo
+El check lo ejecuta **el contenedor de Consul**: `localhost` ahí es Consul mismo. La URL del check tiene
+que usar el nombre del servicio en `mired` (o su IP), igual que `Address`.
 
 ```bash
-curl -X PUT -d 'Hola Mundo' http://localhost:8500/v1/kv/saludo
-```
-
-Si ACL está habilitado con `default_policy: allow` y token `initial_management`, Si necesitas autenticarte, usar el header:
-
-```bash
-curl -H "X-Consul-Token: {{token}}" \
-  http://localhost:8500/v1/kv/mi-clave?raw
-
-
 curl -X PUT http://localhost:8500/v1/agent/service/register \
   -H "Content-Type: application/json" \
   -d '{
     "ID": "microservicio-1",
     "Name": "microservicio",
+    "Address": "microservicio",
     "Port": 5000,
-    "Meta": {
-      "traefik.enable": "true",
-      "traefik.http.routers.microservicio.rule": "Host(`microservicio.universidad.localhost`)",
-      "traefik.http.routers.microservicio.entryPoints": "https",
-      "traefik.http.routers.microservicio.tls": "true",
-      "traefik.http.services.microservicio.loadbalancer.server.port": "5000"
-    },
-    "Checks": [
-      {
-        "Name": "HTTP health",
-        "HTTP": "http://localhost:5000/health",
-        "Interval": "10s",
-        "Timeout": "2s"
-      },
-      {
-        "Name": "TCP port check",
-        "TCP": "localhost:5000",
-        "Interval": "15s",
-        "Timeout": "2s"
-      }
-    ]
+    "Check": {
+      "HTTP": "http://microservicio:5000/health",
+      "Interval": "10s",
+      "Timeout": "2s",
+      "DeregisterCriticalServiceAfter": "1m"
+    }
   }'
 ```
 
-### READ — Listar servicios del agente
-```bash
-curl http://localhost:8500/v1/agent/services | python3 -m json.tool
-```
+El orquestador se registra solo al arrancar y se da de baja al apagarse (ver `CONSUL_HTTP_ADDR` en el
+`.env.example` de la raíz). El enrutamiento HTTP lo hace Traefik por labels de Docker: no hace falta
+agregar tags `traefik.*` en el registro.
 
-### READ — Ver un servicio específico
-```bash
-curl http://localhost:8500/v1/agent/service/microservicio-1 | python3 -m json.tool
-```
+## KV
 
-### READ — Listar servicios del catálogo
-```bash
-curl http://localhost:8500/v1/catalog/services | python3 -m json.tool
-```
-
-### READ — Health de un servicio
-```bash
-# Todos los nodos del servicio
-curl http://localhost:8500/v1/health/service/microservicio | python3 -m json.tool
-
-# Solo nodos con health "passing"
-curl "http://localhost:8500/v1/health/service/microservicio?passing" | python3 -m json.tool
-```
-
-### READ — Listar checks del agente
-```bash
-curl http://localhost:8500/v1/agent/checks | python3 -m json.tool
-```
-
-### DELETE — Dar de baja un servicio
-```bash
-curl -X PUT http://localhost:8500/v1/agent/service/deregister/microservicio-1
-```
+| Operación | Método | Endpoint |
+|---|---|---|
+| Leer | `GET` | `/v1/kv/:key` (`?raw` = valor sin base64) |
+| Listar bajo un prefijo | `GET` | `/v1/kv/:prefix?recurse` (`?keys` = solo nombres) |
+| Crear/actualizar | `PUT` | `/v1/kv/:key` |
+| Eliminar | `DELETE` | `/v1/kv/:key` (`?recurse` = todo el prefijo) |
 
 ```bash
-# Leer una clave específica (devuelve el valor en base64 por defecto)
-curl http://localhost:8500/v1/kv/mi-clave
-
-# Leer con el valor decodificado en texto plano
-curl http://localhost:8500/v1/kv/mi-clave?raw
-
-# Leer todas las claves bajo un prefijo (recursivo)
-curl http://localhost:8500/v1/kv/mi-prefijo/?recurse
-
-# Leer solo los nombres de las claves (sin valores)
-curl http://localhost:8500/v1/kv/mi-prefijo/?keys
-```
-
-La documentación completa del KV Store está en: https://developer.hashicorp.com/consul/api-docs/kv
-
-```bash
-# Crear una clave de ejemplo
 curl -X PUT -d 'Hola Mundo' http://localhost:8500/v1/kv/saludo
+curl -s "http://localhost:8500/v1/kv/saludo?raw"
 ```
-```bash
-# Como tienes ACL habilitado con default_policy: allow y token initial_management, no deberías tener problemas de permisos. Si necesitas autenticarte, usa el header:
-curl -H "X-Consul-Token: {{token}}" \
-  http://localhost:8500/v1/kv/mi-clave?raw
-```
+
+Sin `?raw`, `Value` viene en base64. Documentación completa:
+https://developer.hashicorp.com/consul/api-docs/kv
+
+## Pendiente
+
+- Rotar el `initial_management` que estuvo versionado en `consul.json`: quedó en el historial de git.
+- Pasar `default_policy` a `deny` con tokens por servicio (el orquestador solo necesita
+  `service "pdf-extractext-orquestador" { policy = "write" }`).
