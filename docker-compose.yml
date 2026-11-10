@@ -1,6 +1,6 @@
 services:
   orchestrator:
-    image: pdf-extractext-orquestador:${VERSION:-dev}
+    image: pdf-extractext-orquestador:v${VERSION:-dev}
     build:
       context: .
       args:

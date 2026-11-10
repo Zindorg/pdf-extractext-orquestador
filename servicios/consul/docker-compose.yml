@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/consul/data
-      - ./config:/consul/config:ro
+      - ./config:/consul/config
       - /etc/localtime:/etc/localtime:ro
     # Un solo servidor: -bootstrap-expect=1 alcanza. No combinar con -bootstrap (son excluyentes).
     command: agent -server -ui -client=0.0.0.0 -bootstrap-expect=1 -data-dir=/consul/data -config-dir=/consul/config
