@@ -99,7 +99,8 @@ func run() error {
 	defer func() { _ = publisher.Close() }()
 
 	extractUC := application.NewExtractUseCase(extractor, summarizer, publisher, persister).
-		WithMaxDocumentBytes(cfg.MaxDocumentBytes)
+		WithMaxDocumentBytes(cfg.MaxDocumentBytes).
+		WithLogger(logger)
 	summaryUC := application.NewSummaryUseCase(persister, summarizer, publisher)
 	proxyUC := application.NewProxyUseCase(persister)
 

@@ -48,6 +48,31 @@ func (s *publisherSpy) Publish(_ context.Context, event domain.Event) error {
 	return s.err
 }
 
+// noDuplicates es un Persistidor sin documentos: ninguna ingesta es duplicada.
+type noDuplicates struct{}
+
+func (noDuplicates) Do(context.Context, domain.PersisterRequest) (domain.PersisterResponse, error) {
+	return domain.PersisterResponse{}, nil
+}
+
+func (noDuplicates) FindActiveByChecksum(context.Context, domain.Checksum) (domain.StoredDocumentSummary, bool, error) {
+	return domain.StoredDocumentSummary{}, false, nil
+}
+
+// duplicateStub devuelve siempre el mismo documento existente, o un error de consulta.
+type duplicateStub struct {
+	noDuplicates
+	existing domain.StoredDocumentSummary
+	err      error
+}
+
+func (s duplicateStub) FindActiveByChecksum(context.Context, domain.Checksum) (domain.StoredDocumentSummary, bool, error) {
+	if s.err != nil {
+		return domain.StoredDocumentSummary{}, false, s.err
+	}
+	return s.existing, true, nil
+}
+
 func TestExtractUseCasePublishesOriginalWithoutSummary(t *testing.T) {
 	extractor := &extractorStub{result: domain.Extraction{
 		Text:   "texto plano",
@@ -57,7 +82,7 @@ func TestExtractUseCasePublishesOriginalWithoutSummary(t *testing.T) {
 	summarizer := &summarizerSpy{}
 	publisher := &publisherSpy{}
 
-	result, err := NewExtractUseCase(extractor, summarizer, publisher, nil).Execute(context.Background(), domain.IncomingDocument{
+	result, err := NewExtractUseCase(extractor, summarizer, publisher, noDuplicates{}).Execute(context.Background(), domain.IncomingDocument{
 		Bytes:     []byte(validPDFBytes),
 		Filename:  "doc.pdf",
 		Summarize: false,
@@ -112,7 +137,7 @@ func TestExtractUseCasePublishesSummaryAfterOriginal(t *testing.T) {
 	summarizer := &summarizerSpy{result: domain.Summary{Text: "resumen", TimeMS: 8300}}
 	publisher := &publisherSpy{}
 
-	result, err := NewExtractUseCase(extractor, summarizer, publisher, nil).Execute(context.Background(), domain.IncomingDocument{
+	result, err := NewExtractUseCase(extractor, summarizer, publisher, noDuplicates{}).Execute(context.Background(), domain.IncomingDocument{
 		Bytes:     []byte(validPDFBytes),
 		Filename:  "doc.pdf",
 		Summarize: true,
@@ -169,7 +194,7 @@ func TestExtractUseCaseRejectsBeforeExtracting(t *testing.T) {
 			extractor := &extractorStub{}
 			publisher := &publisherSpy{}
 
-			_, err := NewExtractUseCase(extractor, &summarizerSpy{}, publisher, nil).
+			_, err := NewExtractUseCase(extractor, &summarizerSpy{}, publisher, noDuplicates{}).
 				Execute(context.Background(), domain.IncomingDocument{Bytes: tc.body})
 
 			if !errors.Is(err, tc.want) {
@@ -189,7 +214,7 @@ func TestExtractUseCasePublishesNothingWhenExtractionFails(t *testing.T) {
 	t.Run("el Extractor no responde", func(t *testing.T) {
 		publisher := &publisherSpy{}
 
-		_, err := NewExtractUseCase(&extractorStub{err: domain.ErrExtractorUnavailable}, &summarizerSpy{}, publisher, nil).
+		_, err := NewExtractUseCase(&extractorStub{err: domain.ErrExtractorUnavailable}, &summarizerSpy{}, publisher, noDuplicates{}).
 			Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes)})
 
 		if !errors.Is(err, domain.ErrExtractorUnavailable) {
@@ -204,7 +229,7 @@ func TestExtractUseCasePublishesNothingWhenExtractionFails(t *testing.T) {
 		extractor := &extractorStub{result: domain.Extraction{Reason: domain.ReasonEncryptedPDF}}
 		publisher := &publisherSpy{}
 
-		_, err := NewExtractUseCase(extractor, &summarizerSpy{}, publisher, nil).
+		_, err := NewExtractUseCase(extractor, &summarizerSpy{}, publisher, noDuplicates{}).
 			Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes)})
 
 		var domainErr *domain.Error
@@ -221,7 +246,7 @@ func TestExtractUseCasePublishesNothingWhenSummaryFails(t *testing.T) {
 	extractor := &extractorStub{result: domain.Extraction{Text: "texto plano", Reason: domain.ReasonSuccess}}
 	publisher := &publisherSpy{}
 
-	_, err := NewExtractUseCase(extractor, &summarizerSpy{err: domain.ErrSummaryFailed}, publisher, nil).
+	_, err := NewExtractUseCase(extractor, &summarizerSpy{err: domain.ErrSummaryFailed}, publisher, noDuplicates{}).
 		Execute(context.Background(), domain.IncomingDocument{
 			Bytes:     []byte(validPDFBytes),
 			Summarize: true,
@@ -248,7 +273,7 @@ func TestExtractUseCasePublishesNothingWhenSummaryIsEmpty(t *testing.T) {
 			summarizer := &summarizerSpy{result: domain.Summary{Text: text}}
 			publisher := &publisherSpy{}
 
-			_, err := NewExtractUseCase(extractor, summarizer, publisher, nil).
+			_, err := NewExtractUseCase(extractor, summarizer, publisher, noDuplicates{}).
 				Execute(context.Background(), domain.IncomingDocument{
 					Bytes:     []byte(validPDFBytes),
 					Summarize: true,
@@ -261,5 +286,74 @@ func TestExtractUseCasePublishesNothingWhenSummaryIsEmpty(t *testing.T) {
 				t.Fatalf("publicó %d eventos, quería 0: un resumen vacío no se publica", len(publisher.events))
 			}
 		})
+	}
+}
+
+func successfulExtraction() *extractorStub {
+	return &extractorStub{result: domain.Extraction{Text: "texto plano", TimeMS: 10, Reason: domain.ReasonSuccess}}
+}
+
+func TestDuplicadoSinPedirResumenDevuelveElExistenteSinPublicar(t *testing.T) {
+	publisher := &publisherSpy{}
+	summarizer := &summarizerSpy{}
+	persister := duplicateStub{existing: domain.StoredDocumentSummary{DocumentID: "existente", SummaryStatus: domain.SummaryNotRequested}}
+
+	result, err := NewExtractUseCase(successfulExtraction(), summarizer, publisher, persister).
+		Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.DocumentID != "existente" || result.DeliveryStatus != domain.DeliveryAvailable {
+		t.Fatalf("resultado = %+v", result)
+	}
+	if summarizer.called || len(publisher.events) != 0 {
+		t.Fatal("un duplicado sin resumen pedido no resume ni publica")
+	}
+}
+
+func TestDuplicadoPidiendoResumenLoResuelveSobreElExistente(t *testing.T) {
+	publisher := &publisherSpy{}
+	summarizer := &summarizerSpy{result: domain.Summary{Text: "resumen", TimeMS: 50}}
+	persister := duplicateStub{existing: domain.StoredDocumentSummary{DocumentID: "existente", SummaryStatus: domain.SummaryNotRequested}}
+
+	result, err := NewExtractUseCase(successfulExtraction(), summarizer, publisher, persister).
+		Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes), Summarize: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SummaryStatus != domain.SummaryResolved || result.SummaryText != "resumen" || result.DocumentID != "existente" {
+		t.Fatalf("resultado = %+v", result)
+	}
+	if len(publisher.events) != 1 {
+		t.Fatalf("eventos = %d, quería solo summary_resolved", len(publisher.events))
+	}
+	event, ok := publisher.events[0].(domain.SummaryResolvedEvent)
+	if !ok || event.DocumentID != "existente" || summarizer.documentID != "existente" {
+		t.Fatalf("el resumen debe resolverse sobre el documento existente: %+v", publisher.events[0])
+	}
+}
+
+func TestDuplicadoConResumenEnCursoNoLoPideOtraVez(t *testing.T) {
+	summarizer := &summarizerSpy{}
+	persister := duplicateStub{existing: domain.StoredDocumentSummary{DocumentID: "existente", SummaryStatus: domain.SummaryPending}}
+
+	result, err := NewExtractUseCase(successfulExtraction(), summarizer, &publisherSpy{}, persister).
+		Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes), Summarize: true})
+	if err != nil || summarizer.called || result.SummaryStatus != domain.SummaryPending {
+		t.Fatalf("err = %v, called = %v, status = %s", err, summarizer.called, result.SummaryStatus)
+	}
+}
+
+func TestSiFallaLaConsultaDeDuplicadosSeIngiereIgual(t *testing.T) {
+	publisher := &publisherSpy{}
+	persister := duplicateStub{err: errors.New("persistidor caído")}
+
+	result, err := NewExtractUseCase(successfulExtraction(), &summarizerSpy{}, publisher, persister).
+		Execute(context.Background(), domain.IncomingDocument{Bytes: []byte(validPDFBytes)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.DeliveryStatus != domain.DeliveryIngested || len(publisher.events) != 1 {
+		t.Fatalf("resultado = %+v, eventos = %d", result, len(publisher.events))
 	}
 }
