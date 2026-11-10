@@ -182,3 +182,15 @@ func TestDoFailsOnTransportError(t *testing.T) {
 		t.Errorf("Do() = %v, un fallo de transporte no es un error del documento", domErr.Code)
 	}
 }
+
+func TestDoRechazaUnaRespuestaMayorAlTope(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(make([]byte, 2048))
+	}))
+	defer server.Close()
+
+	client := New(server.URL, time.Second).WithMaxResponseBytes(1024)
+	if _, err := client.Do(t.Context(), domain.PersisterRequest{Method: http.MethodGet, Path: "/api/v1/documents"}); err == nil {
+		t.Fatal("se esperaba error: la respuesta supera el tope")
+	}
+}

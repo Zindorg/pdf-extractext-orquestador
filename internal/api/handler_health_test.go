@@ -9,7 +9,7 @@ import (
 )
 
 func TestHealthIsAlwaysOK(t *testing.T) {
-	router := NewRouter(Deps{
+	router := mustNewRouter(Deps{
 		Extract:       &extractUseCaseStub{},
 		Summary:       &summaryUseCaseStub{},
 		Proxy:         &proxyUseCaseStub{},
@@ -38,7 +38,7 @@ func TestReadyReflectsDependencyState(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router := NewRouter(Deps{
+			router := mustNewRouter(Deps{
 				Extract:       &extractUseCaseStub{},
 				Summary:       &summaryUseCaseStub{},
 				Proxy:         &proxyUseCaseStub{},

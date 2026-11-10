@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -145,7 +148,7 @@ type failingTransport struct{ calls int }
 
 func (t *failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	t.calls++
-	return nil, errors.New("conexión rechazada")
+	return nil, &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}
 }
 
 func TestSummarizeRetriesNetworkErrors(t *testing.T) {
@@ -160,5 +163,32 @@ func TestSummarizeRetriesNetworkErrors(t *testing.T) {
 
 	if want := maxRetries + 1; transport.calls != want {
 		t.Errorf("intentos = %d, quería %d (1 inicial + %d reintentos)", transport.calls, want, maxRetries)
+	}
+}
+
+// timeoutTransport simula un Resumidor que aceptó la petición pero no contestó a tiempo.
+type timeoutTransport struct{ calls int }
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "i/o timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
+
+func (t *timeoutTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	t.calls++
+	return nil, timeoutError{}
+}
+
+func TestSummarizeNoReintentaUnTimeout(t *testing.T) {
+	transport := &timeoutTransport{}
+	client := testClient("http://summarizer.internal")
+	client.httpClient = &http.Client{Transport: transport}
+
+	if _, err := client.Summarize(t.Context(), "id", "texto"); !errors.Is(err, domain.ErrSummaryFailed) {
+		t.Fatalf("Summarize() = %v, quería ErrSummaryFailed", err)
+	}
+	if transport.calls != 1 {
+		t.Fatalf("intentos = %d, quería 1: reintentar tras un timeout duplica el trabajo del modelo", transport.calls)
 	}
 }

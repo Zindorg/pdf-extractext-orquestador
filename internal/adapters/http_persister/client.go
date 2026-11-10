@@ -16,17 +16,43 @@ import (
 
 // Client es el cliente del proxy hacia el Persistidor.
 type Client struct {
-	httpClient *http.Client
-	baseURL    string
+	httpClient       *http.Client
+	baseURL          string
+	maxResponseBytes int64
 }
+
+// defaultMaxResponseBytes acota lo que se lee de una respuesta cuando no se configura otro tope.
+const defaultMaxResponseBytes = 32 << 20
 
 // New arma el cliente apuntando a baseURL (por ejemplo http://persister.internal) con el timeout
 // dado. El timeout acota la espera: el proxy no debe retener la conexión del cliente sin límite.
 func New(baseURL string, timeout time.Duration) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: timeout},
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		httpClient:       &http.Client{Timeout: timeout},
+		baseURL:          strings.TrimRight(baseURL, "/"),
+		maxResponseBytes: defaultMaxResponseBytes,
 	}
+}
+
+// WithMaxResponseBytes fija el tope de lo que se lee de una respuesta (PERSISTER_MAX_RESPONSE_BYTES).
+// Las respuestas se leen enteras a memoria, así que sin tope una descarga enorme la agota.
+func (c *Client) WithMaxResponseBytes(n int64) *Client {
+	if n > 0 {
+		c.maxResponseBytes = n
+	}
+	return c
+}
+
+// readBody lee el cuerpo hasta el tope; pasarse es un error, no una respuesta truncada.
+func (c *Client) readBody(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, c.maxResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("leer la respuesta del Persistidor: %w", err)
+	}
+	if int64(len(data)) > c.maxResponseBytes {
+		return nil, fmt.Errorf("la respuesta del Persistidor supera %d bytes", c.maxResponseBytes)
+	}
+	return data, nil
 }
 
 // Do reenvía la petición al Persistidor. Path y query se concatenan sin tocar: la transparencia del
@@ -48,11 +74,11 @@ func (c *Client) Do(ctx context.Context, req domain.PersisterRequest) (domain.Pe
 	if err != nil {
 		return domain.PersisterResponse{}, fmt.Errorf("llamar al Persistidor: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := c.readBody(resp.Body)
 	if err != nil {
-		return domain.PersisterResponse{}, fmt.Errorf("leer la respuesta del Persistidor: %w", err)
+		return domain.PersisterResponse{}, err
 	}
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -104,11 +130,11 @@ func (c *Client) FindActiveByChecksum(ctx context.Context, checksum domain.Check
 	if err != nil {
 		return domain.StoredDocumentSummary{}, false, fmt.Errorf("llamar al Persistidor: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := c.readBody(resp.Body)
 	if err != nil {
-		return domain.StoredDocumentSummary{}, false, fmt.Errorf("leer la respuesta del Persistidor: %w", err)
+		return domain.StoredDocumentSummary{}, false, err
 	}
 
 	if resp.StatusCode == http.StatusNotFound {

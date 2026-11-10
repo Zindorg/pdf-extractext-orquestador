@@ -16,7 +16,7 @@ import (
 
 func TestExtractRechazaUnCuerpoMayorAlTopeSinLlegarAlCasoDeUso(t *testing.T) {
 	extract := &extractUseCaseStub{}
-	router := NewRouter(Deps{
+	router := mustNewRouter(Deps{
 		Extract:          extract,
 		Summary:          &summaryUseCaseStub{},
 		Proxy:            &proxyUseCaseStub{},
@@ -40,7 +40,7 @@ func TestExtractRechazaUnCuerpoMayorAlTopeSinLlegarAlCasoDeUso(t *testing.T) {
 
 func TestExtractRechazaUnArchivoApenasMayorAlTope(t *testing.T) {
 	extract := &extractUseCaseStub{}
-	router := NewRouter(Deps{
+	router := mustNewRouter(Deps{
 		Extract:          extract,
 		Summary:          &summaryUseCaseStub{},
 		Proxy:            &proxyUseCaseStub{},
@@ -61,7 +61,7 @@ func TestExtractRechazaUnArchivoApenasMayorAlTope(t *testing.T) {
 
 func TestUnErrorInternoQuedaEnElLogConSuCausa(t *testing.T) {
 	var logs bytes.Buffer
-	router := NewRouter(Deps{
+	router := mustNewRouter(Deps{
 		Extract: &extractUseCaseStub{},
 		Summary: &summaryUseCaseStub{},
 		Proxy:   &proxyUseCaseStub{err: errors.New("llamar al Persistidor: connection refused")},
@@ -86,7 +86,7 @@ func TestUnErrorInternoQuedaEnElLogConSuCausa(t *testing.T) {
 
 func TestReadyNoExponeElMotivo(t *testing.T) {
 	var logs bytes.Buffer
-	router := NewRouter(Deps{
+	router := mustNewRouter(Deps{
 		Extract: &extractUseCaseStub{},
 		Summary: &summaryUseCaseStub{},
 		Proxy:   &proxyUseCaseStub{},
@@ -110,7 +110,7 @@ func TestReadyNoExponeElMotivo(t *testing.T) {
 
 func TestUnPanicResponde500YQuedaEnElLogDeAcceso(t *testing.T) {
 	var logs bytes.Buffer
-	router := NewRouter(Deps{
+	router := mustNewRouter(Deps{
 		Extract: &extractUseCaseStub{},
 		Summary: &summaryUseCaseStub{},
 		Proxy:   &proxyUseCaseStub{},
@@ -123,5 +123,20 @@ func TestUnPanicResponde500YQuedaEnElLogDeAcceso(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError || !strings.Contains(logs.String(), `"status":500`) {
 		t.Fatalf("status = %d, log = %s", rec.Code, logs.String())
+	}
+}
+
+// mustNewRouter arma el router de prueba y corta el test si la configuración es inválida.
+func mustNewRouter(deps Deps) *gin.Engine {
+	router, err := NewRouter(deps)
+	if err != nil {
+		panic(err)
+	}
+	return router
+}
+
+func TestNewRouterRechazaProxiesInvalidos(t *testing.T) {
+	if _, err := NewRouter(Deps{TrustedProxies: []string{"no-es-una-red"}}); err == nil {
+		t.Fatal("se esperaba error con TRUSTED_PROXIES inválida")
 	}
 }

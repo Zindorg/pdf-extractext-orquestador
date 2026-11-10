@@ -24,6 +24,16 @@ type Publisher struct {
 	stream string
 }
 
+// Options configura el publicador. MaxLen acota el stream con recorte aproximado (XADD MAXLEN ~):
+// cada mensaje lleva el texto extraído completo y sin tope el stream crece hasta agotar la memoria
+// de Redis. 0 lo deja sin tope. El valor tiene que cubrir el peor atraso del consumidor: un mensaje
+// recortado antes de consumirse se pierde.
+type Options struct {
+	URL    string
+	Stream string
+	MaxLen int64
+}
+
 // xAdder es la única primitiva de Redis que usa el servicio. El doble de test la reemplaza: este
 // repo no levanta un Redis para probar al productor.
 type xAdder interface {
@@ -32,12 +42,16 @@ type xAdder interface {
 	Close() error
 }
 
-// New arma el publicador apuntando a addr (por ejemplo `redis:6379`) en el stream dado.
-func New(addr, stream string) *Publisher {
-	return &Publisher{
-		redis:  &redisXAdder{client: redis.NewClient(&redis.Options{Addr: addr})},
-		stream: stream,
+// New arma el publicador desde una URL redis:// (por ejemplo `redis://:clave@redis:6379/0`).
+func New(opts Options) (*Publisher, error) {
+	redisOpts, err := redis.ParseURL(opts.URL)
+	if err != nil {
+		return nil, fmt.Errorf("REDIS_URL inválida: %w", err)
 	}
+	return &Publisher{
+		redis:  &redisXAdder{client: redis.NewClient(redisOpts), maxLen: opts.MaxLen},
+		stream: opts.Stream,
+	}, nil
 }
 
 // Publish implementa domain.EventPublisher.
@@ -137,11 +151,17 @@ type summaryResolvedBody struct {
 }
 
 // redisXAdder traduce la primitiva propia a la de go-redis.
-type redisXAdder struct{ client *redis.Client }
+type redisXAdder struct {
+	client *redis.Client
+	maxLen int64
+}
 
+// XAdd publica con MAXLEN ~ cuando hay tope: el recorte aproximado es el que Redis hace barato.
 func (r *redisXAdder) XAdd(ctx context.Context, stream, key string, payload []byte) error {
 	return r.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: stream,
+		MaxLen: r.maxLen,
+		Approx: r.maxLen > 0,
 		Values: map[string]any{"document_id": key, "payload": string(payload)},
 	}).Err()
 }

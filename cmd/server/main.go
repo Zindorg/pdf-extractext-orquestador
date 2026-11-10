@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/consul"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/http_extractor"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/http_persister"
@@ -84,10 +86,16 @@ func run() error {
 
 	extractor := http_extractor.New(cfg.ExtractorURL, cfg.ExtractorTimeout)
 	summarizer := http_summarizer.New(cfg.SummarizerURL, cfg.SummarizerTimeout)
-	// El proxy habla con la API del Persistidor, que responde rápido: no necesita el tiempo holgado
-	// que sí exige el Resumidor, que serializa lento.
-	persister := http_persister.New(cfg.PersisterURL, cfg.ExtractorTimeout)
-	publisher := redis_streams.New(cfg.RedisAddr, cfg.StreamName)
+	persister := http_persister.New(cfg.PersisterURL, cfg.PersisterTimeout).
+		WithMaxResponseBytes(cfg.PersisterMaxResponseBytes)
+	publisher, err := redis_streams.New(redis_streams.Options{
+		URL:    cfg.RedisURL,
+		Stream: cfg.StreamName,
+		MaxLen: cfg.StreamMaxLen,
+	})
+	if err != nil {
+		return err
+	}
 	defer func() { _ = publisher.Close() }()
 
 	extractUC := application.NewExtractUseCase(extractor, summarizer, publisher, persister).
@@ -95,19 +103,26 @@ func run() error {
 	summaryUC := application.NewSummaryUseCase(persister, summarizer, publisher)
 	proxyUC := application.NewProxyUseCase(persister)
 
-	router := api.NewRouter(api.Deps{
+	// gin arranca en modo debug, que imprime rutas y avisos en cada arranque. Es global al proceso.
+	gin.SetMode(gin.ReleaseMode)
+
+	router, err := api.NewRouter(api.Deps{
 		Extract:       extractUC,
 		Summary:       summaryUC,
 		Proxy:         proxyUC,
 		PublicBaseURL: cfg.PublicBaseURL,
 		Ready:         publisher.Ready,
 		Logger:        logger,
-		RateLimit:     &middleware.RateLimitConfig{Limit: rateLimitPerWindow, Window: rateLimitWindow},
+		RateLimit:     &middleware.RateLimitConfig{Limit: cfg.RateLimitPerMinute, Window: time.Minute},
 		ExtractGate:   middleware.NewSemaphore(cfg.ExtractMaxInFlight),
 		SummaryGate:   middleware.NewSemaphore(cfg.SummaryMaxInFlight),
 
 		MaxDocumentBytes: cfg.MaxDocumentBytes,
+		TrustedProxies:   cfg.TrustedProxies,
 	})
+	if err != nil {
+		return err
+	}
 
 	if err := webrouter.Register(router, webrouter.Deps{
 		Extract:        extractUC,
@@ -124,6 +139,11 @@ func run() error {
 		Addr:              ":" + strconv.Itoa(cfg.HTTPPort),
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
+		// Un cliente que sube el cuerpo muy lento no retiene la conexión (ni un cupo del semáforo).
+		ReadTimeout: readTimeout,
+		// La respuesta más larga es un resumen: el timeout del Resumidor más un margen.
+		WriteTimeout: cfg.SummarizerTimeout + writeTimeoutMargin,
+		IdleTimeout:  idleTimeout,
 	}
 
 	return serve(server, logger, newRegistrar(cfg, logger))
@@ -213,9 +233,9 @@ func serve(server *http.Server, logger *slog.Logger, registrar *consul.Registrar
 	return nil
 }
 
-// rateLimitWindow y rateLimitPerWindow son el límite por IP del servicio sin autenticación
-// (ADR-0007). El borde (Traefik) puede imponer el suyo; este es la última defensa por réplica.
+// Timeouts del servidor HTTP. ReadTimeout cubre leer un documento de 10 MiB por una conexión lenta.
 const (
-	rateLimitWindow    = time.Minute
-	rateLimitPerWindow = 120
+	readTimeout        = 60 * time.Second
+	writeTimeoutMargin = 30 * time.Second
+	idleTimeout        = 120 * time.Second
 )

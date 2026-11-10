@@ -162,3 +162,50 @@ func TestLoadConsul(t *testing.T) {
 		t.Errorf("config de Consul inesperada: %+v", cfg)
 	}
 }
+
+func TestLoadReportaTodosLosErroresJuntos(t *testing.T) {
+	env := validEnv(map[string]string{
+		"PUBLIC_BASE_URL":   "api.example.com",
+		"EXTRACTOR_TIMEOUT": "0s",
+		"TRUSTED_PROXIES":   "10.0.0.0/8, no-es-red",
+	})
+	delete(env, "PERSISTER_URL")
+
+	_, err := load(envMap(env))
+	if err == nil {
+		t.Fatal("se esperaba error")
+	}
+	for _, want := range []string{"PUBLIC_BASE_URL", "EXTRACTOR_TIMEOUT", "TRUSTED_PROXIES", "PERSISTER_URL"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("el error no menciona %s: %v", want, err)
+		}
+	}
+}
+
+func TestLoadNuevasVariables(t *testing.T) {
+	cfg, err := load(envMap(validEnv(map[string]string{
+		"REDIS_URL":             "redis://:clave@redis:6379/1",
+		"STREAM_MAX_LEN":        "500",
+		"PERSISTER_TIMEOUT":     "5s",
+		"RATE_LIMIT_PER_MINUTE": "0",
+		"TRUSTED_PROXIES":       "172.16.0.0/12,10.0.0.1",
+		"LOG_LEVEL":             "DEBUG",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RedisURL != "redis://:clave@redis:6379/1" || cfg.StreamMaxLen != 500 || cfg.PersisterTimeout != 5*time.Second ||
+		cfg.RateLimitPerMinute != 0 || len(cfg.TrustedProxies) != 2 || cfg.LogLevel != "debug" {
+		t.Fatalf("config inesperada: %+v", cfg)
+	}
+}
+
+func TestLoadArmaRedisURLDesdeRedisAddr(t *testing.T) {
+	cfg, err := load(envMap(validEnv(nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RedisURL != "redis://redis:6379" {
+		t.Fatalf("RedisURL = %q", cfg.RedisURL)
+	}
+}

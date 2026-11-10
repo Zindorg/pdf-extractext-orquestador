@@ -23,8 +23,9 @@ services:
       - EXTRACTOR_URL=http://extractor.internal
       - SUMMARIZER_URL=http://summarizer.internal
       - PERSISTER_URL=http://persister.internal
-      - REDIS_ADDR=redis:6379
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - STREAM_NAME=${STREAM_NAME:-document-events}
+      - STREAM_MAX_LEN=${STREAM_MAX_LEN:-10000}
       - TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
       # Registro en Consul (servicios/consul). Vacía CONSUL_HTTP_ADDR para no registrarse.
       - CONSUL_HTTP_ADDR=${CONSUL_HTTP_ADDR-http://consul:8500}

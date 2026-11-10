@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 
@@ -44,18 +45,18 @@ type Deps struct {
 	SummaryGate   *middleware.Semaphore
 	// MaxDocumentBytes es el tope del archivo admitido (MAX_DOCUMENT_BYTES); 0 usa el default.
 	MaxDocumentBytes int
+	// TrustedProxies son los proxies (Traefik) cuyo X-Forwarded-For se acepta para conocer la IP del
+	// cliente. Vacío: no se confía en ninguno y la IP es la de la conexión.
+	TrustedProxies []string
 }
 
 // NewRouter arma el router de gin con todas las rutas de openapi.yaml. El prefijo `/api/v1` se
-// conserva y no se reescribe (ADR-0005).
-func NewRouter(deps Deps) *gin.Engine {
-	// gin arranca en modo debug por defecto, que imprime rutas y avisos en cada arranque. El
-	// servicio es de producción: release salvo que los tests ya hayan fijado el modo.
-	if gin.Mode() == gin.DebugMode {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
+// conserva y no se reescribe (ADR-0005). El modo de gin (release) lo fija main: es global al proceso.
+func NewRouter(deps Deps) (*gin.Engine, error) {
 	router := gin.New()
+	if err := router.SetTrustedProxies(deps.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("TRUSTED_PROXIES: %w", err)
+	}
 	if deps.MaxDocumentBytes <= 0 {
 		deps.MaxDocumentBytes = application.DefaultMaxDocumentBytes
 	}
@@ -79,7 +80,7 @@ func NewRouter(deps Deps) *gin.Engine {
 	}
 
 	registerRoutes(router, deps)
-	return router
+	return router, nil
 }
 
 func registerRoutes(router *gin.Engine, deps Deps) {
