@@ -1,0 +1,4 @@
+{{ define "alerts" }}
+{{ if .Notice }}<div class="alert ok" role="status">{{ .Notice }}</div>{{ end }}
+{{ if .Error }}<div class="alert bad" role="alert">{{ .Error }}</div>{{ end }}
+{{ end }}

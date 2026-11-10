@@ -1,23 +1,32 @@
-{{ define "home.html" }}
-{{ template "base.html" . }}
-{{ end }}
+{{ define "title" }}Subir documento{{ end }}
 
 {{ define "content" }}
-<h1>Subir documento PDF</h1>
-<form action="/upload" method="post" enctype="multipart/form-data">
-    <input type="hidden" name="csrf" value="{{ .CSRFToken }}">
-    <div>
+<section class="hero">
+    <h1>Extraé el texto de un PDF</h1>
+    <p class="lead">Subí un PDF de hasta {{ .MaxMiB }} MiB y obtené su texto. Si querés, también un resumen generado con IA.</p>
+</section>
+
+{{ template "alerts" . }}
+
+<form class="card upload" action="/upload" method="post" enctype="multipart/form-data" data-busy>
+    <div class="field">
         <label for="document">Archivo PDF</label>
-        <input type="file" id="document" name="document" accept="application/pdf,.pdf" required>
+        <input type="file" id="document" name="document" accept="application/pdf,.pdf" required aria-describedby="document-help document-error">
+        <p id="document-help" class="help">Solo PDF, hasta {{ .MaxMiB }} MiB. El archivo no se guarda: solo se conserva el texto extraído.</p>
+        <p id="document-error" class="field-error" role="alert" data-file-error hidden></p>
     </div>
-    <div>
-        <label>
-            <input type="checkbox" name="summarize" value="true"> Generar resumen
+    <div class="field">
+        <label class="check">
+            <input type="checkbox" name="summarize" value="true"{{ if .Summarize }} checked{{ end }}>
+            <span>Generar resumen con IA</span>
         </label>
+        <p class="help">Con resumen el proceso tarda unos segundos más.</p>
     </div>
-    <button type="submit">Subir</button>
+    <button class="btn primary" type="submit" data-busy-text="Procesando…">Subir y procesar</button>
+    <p class="help busy" role="status" aria-live="polite" data-busy-status hidden>
+        <span class="spinner" aria-hidden="true"></span> Estamos extrayendo el texto. No cierres esta página.
+    </p>
 </form>
-{{ if .Error }}
-<div class="error">{{ .Error }}</div>
-{{ end }}
+
+<p class="help">¿Ya subiste documentos? <a href="/documents">Mirá el listado</a>.</p>
 {{ end }}

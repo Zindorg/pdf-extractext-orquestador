@@ -1,0 +1,23 @@
+{{ define "title" }}Texto de {{ .Filename }}{{ end }}
+
+{{ define "content" }}
+<nav class="crumbs" aria-label="Ruta">
+    <a href="/documents">Documentos</a> <span aria-hidden="true">/</span>
+    <a href="/documents/{{ .ID }}">{{ .Filename }}</a> <span aria-hidden="true">/</span>
+    <span>Texto completo</span>
+</nav>
+
+<header class="doc-head">
+    <div>
+        <h1>Texto extraído</h1>
+        <p class="meta">{{ .Chars }} caracteres · {{ .Words }} palabras</p>
+    </div>
+    <div class="actions">
+        <button class="btn" type="button" data-copy="#full-text" hidden>Copiar texto</button>
+        <a class="btn" href="/documents/{{ .ID }}/download/original">Descargar .txt</a>
+        <a class="btn" href="/documents/{{ .ID }}">Volver al documento</a>
+    </div>
+</header>
+
+<pre id="full-text" class="text full" tabindex="0">{{ .Text }}</pre>
+{{ end }}

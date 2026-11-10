@@ -1,20 +1,29 @@
-<!DOCTYPE html>
+{{ define "base.html" }}<!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ block "title" . }}PDF-Extractext{{ end }}</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ block "title" . }}PDF-Extractext{{ end }} · PDF-Extractext</title>
+    {{ block "head" . }}{{ end }}
     <link rel="stylesheet" href="/static/css/app.css">
-    <script src="/static/js/htmx.min.js"></script>
+    <script src="/static/js/app.js" defer></script>
 </head>
 <body>
-    <header>
-        <nav>
-            <a href="/">Subir</a> | <a href="/documents">Documentos</a>
-        </nav>
+    <a class="skip" href="#main">Saltar al contenido</a>
+    <header class="topbar">
+        <div class="container topbar-inner">
+            <a class="brand" href="/">PDF-Extractext</a>
+            <nav aria-label="Principal">
+                <a href="/"{{ if eq .Nav "upload" }} aria-current="page"{{ end }}>Subir PDF</a>
+                <a href="/documents"{{ if eq .Nav "documents" }} aria-current="page"{{ end }}>Documentos</a>
+            </nav>
+        </div>
     </header>
-    <main>
-        {{ block "content" . }}{{ end }}
+    <main id="main" class="container">
+        {{ template "content" . }}
     </main>
+    <footer class="container foot">
+        <p>Solo se guarda el texto extraído; el archivo PDF no se almacena.</p>
+    </footer>
 </body>
-</html>
+</html>{{ end }}

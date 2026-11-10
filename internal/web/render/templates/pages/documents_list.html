@@ -1,33 +1,77 @@
-{{ define "documents_list.html" }}
-{{ template "base.html" . }}
-{{ end }}
+{{ define "title" }}Documentos{{ end }}
 
 {{ define "content" }}
-<h1>Documentos</h1>
-<form method="get" action="/documents">
-    <label>Status: <input name="status" value="{{ .Status }}"></label>
-    <label>Nombre: <input name="filename" value="{{ .Filename }}"></label>
-    <label><input type="checkbox" name="include_deleted" value="true" {{ if .IncludeDeleted }}checked{{ end }}> Incluir borrados</label>
-    <button type="submit">Filtrar</button>
+<header class="doc-head">
+    <div>
+        <h1>Documentos</h1>
+        <p class="meta">{{ .Total }} en total{{ if .Filtered }} con los filtros aplicados{{ end }}</p>
+    </div>
+    <div class="actions"><a class="btn primary" href="/">Subir PDF</a></div>
+</header>
+
+{{ template "alerts" . }}
+
+<form class="card filters" method="get" action="/documents">
+    <div class="field">
+        <label for="f-name">Nombre</label>
+        <input id="f-name" type="search" name="filename" value="{{ .Filename }}" maxlength="100" placeholder="Parte del nombre">
+    </div>
+    <div class="field">
+        <label for="f-status">Resumen</label>
+        <select id="f-status" name="status">
+            {{ range .StatusOptions }}<option value="{{ .Value }}"{{ if .Selected }} selected{{ end }}>{{ .Label }}</option>{{ end }}
+        </select>
+    </div>
+    <div class="field">
+        <label class="check"><input type="checkbox" name="include_deleted" value="true"{{ if .IncludeDeleted }} checked{{ end }}> <span>Incluir borrados</span></label>
+    </div>
+    <div class="actions">
+        <button class="btn primary" type="submit">Filtrar</button>
+        {{ if .Filtered }}<a class="btn" href="/documents">Limpiar</a>{{ end }}
+    </div>
 </form>
-<table>
+
+{{ if .Rows }}
+<div class="table-wrap">
+<table class="docs">
+    <caption class="sr-only">Documentos procesados</caption>
     <thead>
-        <tr><th>Nombre</th><th>Estado resumen</th><th>Creado</th><th>Acciones</th></tr>
+        <tr><th scope="col">Archivo</th><th scope="col">Estado</th><th scope="col">Extracción</th><th scope="col">Subido</th><th scope="col">Acciones</th></tr>
     </thead>
     <tbody>
-    {{ range .Items }}
+    {{ range .Rows }}
         <tr>
-            <td>{{ .Filename }}</td>
-            <td>{{ .SummaryStatus }}</td>
-            <td>{{ .CreatedAt }}</td>
-            <td><a href="/documents/{{ .DocumentID }}">Ver</a></td>
+            <td data-label="Archivo">{{ if .Deleted }}<span class="strong">{{ .Filename }}</span>{{ else }}<a class="strong" href="/documents/{{ .ID }}">{{ .Filename }}</a>{{ end }}</td>
+            <td data-label="Estado"><span class="badge {{ .Status.Class }}">{{ .Status.Label }}</span></td>
+            <td data-label="Extracción">{{ .ExtractionTime }}</td>
+            <td data-label="Subido">{{ if .CreatedISO }}<time datetime="{{ .CreatedISO }}" data-local>{{ .CreatedText }}</time>{{ else }}—{{ end }}</td>
+            <td data-label="Acciones">
+                {{ if .Deleted }}
+                <form action="/documents/{{ .ID }}/restore" method="post"><button class="btn small" type="submit">Restaurar</button></form>
+                {{ else }}
+                <a class="btn small" href="/documents/{{ .ID }}">Abrir</a>
+                {{ end }}
+            </td>
         </tr>
     {{ end }}
     </tbody>
 </table>
-<div>
-    {{ if .HasPrev }}<a href="/documents?page={{ .PrevPage }}">Anterior</a>{{ end }}
-    Página {{ .Page }}
-    {{ if .HasNext }}<a href="/documents?page={{ .NextPage }}">Siguiente</a>{{ end }}
 </div>
+
+<nav class="pager" aria-label="Paginación">
+    {{ if .HasPrev }}<a class="btn" rel="prev" href="{{ .PrevURL }}">← Anterior</a>{{ else }}<span></span>{{ end }}
+    <span>Mostrando {{ .From }}–{{ .To }} · Página {{ .Page }} de {{ .TotalPages }}</span>
+    {{ if .HasNext }}<a class="btn" rel="next" href="{{ .NextURL }}">Siguiente →</a>{{ else }}<span></span>{{ end }}
+</nav>
+{{ else }}
+<div class="card empty">
+    {{ if .Filtered }}
+    <p class="strong">Ningún documento coincide con los filtros.</p>
+    <p><a class="btn" href="/documents">Quitar filtros</a></p>
+    {{ else }}
+    <p class="strong">Todavía no hay documentos.</p>
+    <p><a class="btn primary" href="/">Subí el primero</a></p>
+    {{ end }}
+</div>
+{{ end }}
 {{ end }}

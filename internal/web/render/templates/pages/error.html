@@ -1,0 +1,9 @@
+{{ define "title" }}{{ .Title }}{{ end }}
+
+{{ define "content" }}
+<section class="card error-page">
+    <h1>{{ .Title }}</h1>
+    <p>{{ .Message }}</p>
+    <p><a class="btn" href="{{ .BackURL }}">{{ .BackLabel }}</a></p>
+</section>
+{{ end }}

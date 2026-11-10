@@ -1,56 +1,103 @@
-{{ define "document_detail.html" }}
-{{ template "base.html" . }}
-{{ end }}
+{{ define "title" }}{{ if .Loaded }}{{ .Filename }}{{ else }}Documento{{ end }}{{ end }}
+
+{{ define "head" }}{{ if .Wait.Active }}<meta http-equiv="refresh" content="{{ .Wait.Secs }};url={{ .Wait.URL }}">{{ end }}{{ end }}
 
 {{ define "content" }}
-<h1>Detalle del documento</h1>
-<p><strong>ID:</strong> {{ .Doc.DocumentID }}</p>
-<p><strong>Archivo:</strong> {{ .Doc.Filename }}</p>
-<p><strong>Estado resumen:</strong> {{ .Doc.SummaryStatus }}</p>
+<nav class="crumbs" aria-label="Ruta">
+    <a href="/documents">Documentos</a> <span aria-hidden="true">/</span>
+    <span>{{ if .Loaded }}{{ .Filename }}{{ else }}Documento nuevo{{ end }}</span>
+</nav>
 
-{{ if .Processing }}
-<div class="alert" aria-live="polite">El documento se está procesando</div>
+{{ template "alerts" . }}
+
+{{ if .Wait.Active }}
+<div class="card waiting" role="status" aria-live="polite">
+    <span class="spinner" aria-hidden="true"></span>
+    <div>
+        <p class="strong">{{ .Wait.Message }}</p>
+        <p class="help">Esta página se actualiza sola. <a href="{{ .Wait.URL }}">Actualizar ahora</a></p>
+    </div>
+</div>
 {{ end }}
 
-{{ if .Error }}
-<div class="error">{{ .Error }}</div>
+{{ if .Wait.TimedOut }}
+<div class="alert warn" role="status">{{ .Wait.Message }} <a href="/documents/{{ .ID }}">Actualizar</a></div>
 {{ end }}
 
-<div>
-    <a href="/documents/{{ .Doc.DocumentID }}/download/original">Descargar texto extraído</a>
-    {{ if eq .Doc.SummaryStatus "RESOLVED" }}
-        | <a href="/documents/{{ .Doc.DocumentID }}/download/summary">Descargar resumen</a>
-    {{ end }}
-</div>
+{{ if .Loaded }}
+<header class="doc-head">
+    <div>
+        <h1>{{ .Filename }}</h1>
+        <p class="meta">
+            <span class="badge {{ .Status.Class }}">{{ .Status.Label }}</span>
+            {{ if .MimeType }}<span>{{ .MimeType }}</span>{{ end }}
+            {{ if .CreatedISO }}<span>Subido <time datetime="{{ .CreatedISO }}" data-local>{{ .CreatedText }}</time></span>{{ end }}
+        </p>
+    </div>
+    <div class="actions">
+        <a class="btn" href="/documents/{{ .ID }}/download/original">Descargar texto (.txt)</a>
+        {{ if .HasSummary }}<a class="btn" href="/documents/{{ .ID }}/download/summary">Descargar resumen</a>{{ end }}
+        <a class="btn" href="/documents/{{ .ID }}/text">Ver texto completo</a>
+    </div>
+</header>
 
-<div>
-    {{ if or (eq .Doc.SummaryStatus "NOT_REQUESTED") (eq .Doc.SummaryStatus "FAILED") }}
-    <form action="/documents/{{ .Doc.DocumentID }}/summary" method="post">
-        <input type="hidden" name="csrf" value="{{ .CSRFToken }}">
-        <button type="submit">Pedir resumen</button>
-    </form>
-    {{ end }}
-</div>
+<dl class="stats">
+    <div><dt>Caracteres</dt><dd>{{ .TextChars }}</dd></div>
+    <div><dt>Palabras</dt><dd>{{ .TextWords }}</dd></div>
+    <div><dt>Extracción</dt><dd>{{ .ExtractionTime }}</dd></div>
+    <div><dt>Resumen</dt><dd>{{ .SummaryTime }}</dd></div>
+    <div><dt>Total</dt><dd>{{ .TotalTime }}</dd></div>
+    <div><dt>Huella (sha256)</dt><dd><code title="{{ .Checksum }}">{{ .ShortChecksum }}…</code></dd></div>
+</dl>
 
-<div>
-    {{ if .Doc.DeletedAt }}
-    <form action="/documents/{{ .Doc.DocumentID }}/restore" method="post">
-        <input type="hidden" name="csrf" value="{{ .CSRFToken }}">
-        <button type="submit">Restaurar</button>
-    </form>
+<section class="card" aria-labelledby="summary-title">
+    <div class="section-head">
+        <h2 id="summary-title">Resumen</h2>
+        {{ if .HasSummary }}<button class="btn small" type="button" data-copy="#summary-text" hidden>Copiar</button>{{ end }}
+    </div>
+    {{ if .HasSummary }}
+        <div id="summary-text" class="prose">{{ .Summary }}</div>
+    {{ else if eq .Status.Code "PENDING" }}
+        <p class="muted-text">El resumen todavía está en proceso.</p>
+    {{ else if eq .Status.Code "FAILED" }}
+        <p class="muted-text">No se pudo generar el resumen. Podés intentarlo de nuevo.</p>
     {{ else }}
-    <form action="/documents/{{ .Doc.DocumentID }}/delete" method="post" onsubmit="return confirm('¿Borrar documento?');">
-        <input type="hidden" name="csrf" value="{{ .CSRFToken }}">
-        <button type="submit">Borrar</button>
+        <p class="muted-text">Este documento no tiene resumen.</p>
+    {{ end }}
+    {{ if .CanRequestSummary }}
+    <form action="/documents/{{ .ID }}/summary" method="post" data-busy>
+        <button class="btn primary" type="submit" data-busy-text="Generando resumen…">{{ if eq .Status.Code "FAILED" }}Reintentar resumen{{ else }}Generar resumen{{ end }}</button>
+        <p class="help busy" role="status" aria-live="polite" data-busy-status hidden>
+            <span class="spinner" aria-hidden="true"></span> Generando el resumen. Puede tardar unos segundos.
+        </p>
     </form>
     {{ end }}
-</div>
+</section>
 
-<h2>Texto extraído</h2>
-<pre><code>{{ .Doc.ExtractedText }}</code></pre>
+<section class="card" aria-labelledby="text-title">
+    <div class="section-head">
+        <h2 id="text-title">Texto extraído</h2>
+        {{ if .HasText }}<button class="btn small" type="button" data-copy="#extracted-text" hidden>Copiar</button>{{ end }}
+    </div>
+    {{ if .HasText }}
+        <pre id="extracted-text" class="text" tabindex="0">{{ .TextPreview }}</pre>
+        {{ if .TextTruncated }}
+        <p class="help">Mostrando el comienzo del texto. <a href="/documents/{{ .ID }}/text">Ver el texto completo</a> o <a href="/documents/{{ .ID }}/download/original">descargarlo</a>.</p>
+        {{ end }}
+    {{ else }}
+        <p class="muted-text">No hay texto para mostrar.</p>
+    {{ end }}
+</section>
 
-<h2>Resumen</h2>
-<div id="summary-block">
-{{ template "summary_block.html" . }}
-</div>
+<section class="card danger-zone" aria-labelledby="danger-title">
+    <h2 id="danger-title">Borrar documento</h2>
+    <details>
+        <summary class="btn danger">Borrar…</summary>
+        <form action="/documents/{{ .ID }}/delete" method="post">
+            <p>Se borra de la lista. Después podés restaurarlo desde <em>Documentos</em> con <em>Incluir borrados</em>.</p>
+            <button class="btn danger" type="submit">Sí, borrar este documento</button>
+        </form>
+    </details>
+</section>
+{{ end }}
 {{ end }}
