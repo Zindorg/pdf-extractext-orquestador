@@ -1,9 +1,10 @@
 global:
-  sendAnonymousUsage: true
+  sendAnonymousUsage: false
 
+# Sin dashboard: estaba publicado sin autenticación (api.insecure y un router a api@internal).
 api:
-  dashboard: true
-  insecure: true
+  dashboard: false
+  insecure: false
 
 providers:
   docker:
@@ -20,7 +21,7 @@ providers:
 
 log:
   level: INFO
-  format: common
+  format: json
 
 entryPoints:
   http:

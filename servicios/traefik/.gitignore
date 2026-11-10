@@ -1,0 +1,4 @@
+# Certificados y claves: se generan en cada máquina, nunca se versionan.
+certs/*.pem
+certs/*.key
+certs/*.crt

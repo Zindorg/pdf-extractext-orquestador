@@ -43,14 +43,15 @@ services:
       - traefik.http.routers.orch-api.entrypoints=https
       - traefik.http.routers.orch-api.tls=true
       - traefik.http.routers.orch-api.service=orch
-      - traefik.http.routers.orch-api.middlewares=orch-ratelimit@file,orch-cb@file
+      - traefik.http.routers.orch-api.middlewares=orch-ratelimit@file,orch-body-limit@file,orch-headers@file,orch-cb@file
       # Web front (HTML)
-      - traefik.http.routers.orch-web.rule=Host(`${PUBLIC_HOST:?definir PUBLIC_HOST}`)
+      # Las sondas (/health, /healthz, /ready) son para el orquestador de contenedores, no para afuera.
+      - traefik.http.routers.orch-web.rule=Host(`${PUBLIC_HOST:?definir PUBLIC_HOST}`) && !PathRegexp(`^/(health|healthz|ready)$`)
       - traefik.http.routers.orch-web.priority=1
       - traefik.http.routers.orch-web.entrypoints=https
       - traefik.http.routers.orch-web.tls=true
       - traefik.http.routers.orch-web.service=orch
-      - traefik.http.routers.orch-web.middlewares=orch-ratelimit@file
+      - traefik.http.routers.orch-web.middlewares=orch-ratelimit@file,orch-body-limit@file,orch-headers@file
       - traefik.http.services.orch.loadbalancer.server.port=8080
 
 networks:
