@@ -227,3 +227,49 @@ func TestDoRechazaUnaRespuestaMayorAlTope(t *testing.T) {
 		t.Fatal("se esperaba error: la respuesta supera el tope")
 	}
 }
+
+func TestFindActiveByChecksum(t *testing.T) {
+	cases := []struct {
+		name      string
+		status    int
+		body      string
+		wantFound bool
+		wantErr   error
+	}{
+		{"existe", http.StatusOK, `{"document_id":"d1","summary_status":"RESOLVED","summary":"r","extracted_text":"ignorado"}`, true, nil},
+		{"no existe", http.StatusNotFound, `{"code":"document_not_found"}`, false, nil},
+		{"persistidor caído", http.StatusServiceUnavailable, ``, false, domain.ErrPersisterUnavailable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var path string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path = r.URL.Path
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			doc, found, err := testClient(server.URL).FindActiveByChecksum(t.Context(), "abc")
+			if path != "/api/v1/documents/checksum/abc" {
+				t.Errorf("path = %q", path)
+			}
+			if found != tc.wantFound || (tc.wantErr == nil && err != nil) || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
+				t.Fatalf("found = %v, err = %v", found, err)
+			}
+			if tc.wantFound && (doc.DocumentID != "d1" || doc.SummaryStatus != domain.SummaryResolved || doc.Summary != "r") {
+				t.Errorf("doc = %+v", doc)
+			}
+		})
+	}
+}
+
+func TestFindActiveByChecksumConCuerpoIlegible(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("no es json"))
+	}))
+	defer server.Close()
+	if _, found, err := testClient(server.URL).FindActiveByChecksum(t.Context(), "abc"); err == nil || found {
+		t.Fatalf("found = %v, err = %v; quería error", found, err)
+	}
+}

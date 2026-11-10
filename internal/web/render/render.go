@@ -43,6 +43,8 @@ func (r *Renderer) Execute(name string, data any) ([]byte, error) {
 func (r *Renderer) HTML(c *gin.Context, code int, name string, data any) {
 	body, err := r.Execute(name, data)
 	if err != nil {
+		// La causa va al log de acceso; el navegador recibe un texto fijo.
+		_ = c.Error(err)
 		c.Header("Cache-Control", "no-store")
 		c.Data(http.StatusInternalServerError, "text/plain; charset=utf-8", []byte("Error interno al generar la página."))
 		return

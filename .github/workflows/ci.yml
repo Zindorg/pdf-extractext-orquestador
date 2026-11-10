@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (format, vet, lint, tests, vulnerabilities)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l cmd internal mocks)"
+          if [ -n "$unformatted" ]; then echo "Sin formatear:"; echo "$unformatted"; exit 1; fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -checks all,-ST1000 ./...
+
+      - name: go test (race)
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  docker:
+    name: Docker (image and compose files)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build image
+        run: docker build --build-arg VERSION=ci -t pdf-extractext-orquestador:ci .
+
+      - name: validate compose files
+        env:
+          PUBLIC_HOST: ci.localhost
+          PUBLIC_BASE_URL: https://ci.localhost
+          MONGO_ROOT_USER: ci
+          MONGO_ROOT_PASSWORD: ci
+        run: |
+          docker compose config -q
+          for dir in servicios/*/; do
+            echo "== $dir"
+            (cd "$dir" && docker compose config -q)
+          done

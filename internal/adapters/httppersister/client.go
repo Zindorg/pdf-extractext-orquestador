@@ -171,5 +171,5 @@ func (c *Client) FindActiveByChecksum(ctx context.Context, checksum domain.Check
 		}, true, nil
 	}
 
-	return domain.StoredDocumentSummary{}, false, fmt.Errorf("respuesta del Persistidor sin código reconocible (status %d)", resp.StatusCode)
+	return domain.StoredDocumentSummary{}, false, translate(resp.StatusCode, body)
 }
