@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"time"
 
@@ -91,7 +92,7 @@ func (uc *SummaryUseCase) Execute(ctx context.Context, documentID domain.Documen
 
 func (uc *SummaryUseCase) readDocument(ctx context.Context, documentID domain.DocumentID) (documentView, error) {
 	resp, err := uc.persister.Do(ctx, domain.PersisterRequest{
-		Method: "GET",
+		Method: http.MethodGet,
 		Path:   listPath + "/" + string(documentID),
 	})
 	if err != nil {
@@ -107,7 +108,7 @@ func (uc *SummaryUseCase) readDocument(ctx context.Context, documentID domain.Do
 
 func (uc *SummaryUseCase) downloadText(ctx context.Context, documentID domain.DocumentID) (string, error) {
 	resp, err := uc.persister.Do(ctx, domain.PersisterRequest{
-		Method: "GET",
+		Method: http.MethodGet,
 		Path:   listPath + "/" + string(documentID) + "/download/original",
 	})
 	if err != nil {

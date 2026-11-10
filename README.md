@@ -30,21 +30,28 @@ cp .env.example .env
 
 | Variable | Valor por defecto | Descripción |
 |---|---|---|
-| `VERSION` | `0.1.0` | Tag de imagen Docker (`pdf-extractext-orquestador:v${VERSION}`) |
+| `VERSION` | `dev` | Tag de imagen Docker y versión que se anuncia en Consul |
 | `TZ` | `America/Argentina/Mendoza` | Zona horaria |
-| `PUBLIC_HOST` | `api.example.com` | Host público usado por Traefik (router `Host`) |
-| `PUBLIC_BASE_URL` | `https://api.example.com` | Base URL pública para generar `Location` absoluto en respuestas |
-| `PUBLIC_TLS` | `false` | `true` para habilitar TLS en router Traefik |
-| `RATE_LIMIT_AVERAGE` | `100` | Rate limit promedio (requests/s) en borde |
-| `RATE_LIMIT_BURST` | `200` | Rate limit burst en borde |
+| `PUBLIC_HOST` | — (obligatoria en compose) | Host público usado por Traefik (router `Host`) |
+| `PUBLIC_BASE_URL` | — (obligatoria) | URL absoluta http(s) para el `Location` de las respuestas |
+| `EXTRACTOR_URL` / `SUMMARIZER_URL` / `PERSISTER_URL` | — (obligatorias) | URLs internas de los workers |
+| `REDIS_URL` | — (obligatoria) | `redis://[:password@]host:port[/db]`. `REDIS_ADDR` (`host:port`) se sigue aceptando |
 | `STREAM_NAME` | `document-events` | Stream Redis para eventos de ingesta |
-| `MAX_DOCUMENT_BYTES` | `10485760` | Tamaño máximo del documento (10 MiB). Aplicado en borde y a nivel de configuración |
+| `STREAM_MAX_LEN` | `10000` | Tope aproximado del stream (`XADD MAXLEN ~`); `0` = sin tope |
+| `MAX_DOCUMENT_BYTES` | `10485760` | Tamaño máximo del documento (10 MiB), en API y web |
 | `EXTRACTOR_TIMEOUT` | `30s` | Timeout HTTP hacia el Extractor |
-| `SUMMARIZER_TIMEOUT` | `120s` | Timeout HTTP hacia el Resumidor (holgado, modelo local serializado) |
+| `SUMMARIZER_TIMEOUT` | `120s` | Timeout HTTP hacia el Resumidor; también fija el `WriteTimeout` del servidor |
+| `PERSISTER_TIMEOUT` | `15s` | Timeout HTTP hacia el Persistidor |
+| `PERSISTER_MAX_RESPONSE_BYTES` | `33554432` | Tope de lo que se lee de una respuesta del Persistidor (32 MiB) |
 | `EXTRACT_MAX_IN_FLIGHT` | `16` | Semáforo de concurrencia para `POST /api/v1/documents/extract` |
 | `SUMMARY_MAX_IN_FLIGHT` | `4` | Semáforo de concurrencia para `POST /api/v1/documents/{id}/summary` |
+| `RATE_LIMIT_PER_MINUTE` | `120` | Límite por IP de cliente y réplica; `0` lo desactiva |
+| `TRUSTED_PROXIES` | — | CIDRs/IPs de los proxies (Traefik) cuyo `X-Forwarded-For` se acepta |
 | `LOG_LEVEL` | `info` | Nivel de log (`debug/info/warn/error`) |
-| `DOCKER_API_VERSION` | `1.44` | Versión de API Docker para Traefik (robustez frente a daemons nuevos) |
+| `CONSUL_HTTP_ADDR` | — | API de Consul (`http://consul:8500`); vacía = no se registra |
+| `CONSUL_HTTP_TOKEN` | — | Token de Consul, solo si el ACL lo exige |
+| `CONSUL_SERVICE_NAME` | `pdf-extractext-orquestador` | Nombre del servicio en Consul |
+| `SERVICE_ADDRESS` | hostname del contenedor | Dirección con la que Consul alcanza al servicio (y hace el check a `/ready`) |
 | `EXTRACTOR_MOCK_DELAY_MS` | `0` | (Solo mocks) Demora artificial en Extractor mock (`lento.pdf`) |
 | `SUMMARIZER_MOCK_DELAY_MS` | `0` | (Solo mocks) Demora artificial en Resumidor mock |
 

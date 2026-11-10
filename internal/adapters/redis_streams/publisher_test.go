@@ -249,8 +249,6 @@ func TestPublishPropagatesStreamError(t *testing.T) {
 
 type unknownEvent struct{}
 
-func (unknownEvent) isEvent() {}
-
 // Ready reporta si el stream es alcanzable: el readiness responde 503 cuando Redis está caído,
 // porque sin stream no se puede publicar y admitir documentos solo produciría errores.
 func TestReadyReflectsRedisReachability(t *testing.T) {

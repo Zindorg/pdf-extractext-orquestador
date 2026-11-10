@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
@@ -37,7 +38,7 @@ func (uc *ProxyUseCase) Forward(ctx context.Context, req domain.PersisterRequest
 // rutas que el Orquestador no publica.
 func allowed(method, path string) bool {
 	if path == listPath {
-		return method == "GET"
+		return method == http.MethodGet
 	}
 	if !strings.HasPrefix(path, listPath+"/") {
 		return false
@@ -53,7 +54,7 @@ func allowed(method, path string) bool {
 	}
 
 	switch method {
-	case "GET", "DELETE":
+	case http.MethodGet, http.MethodDelete:
 		return true
 	default:
 		return false
@@ -64,9 +65,9 @@ func allowed(method, path string) bool {
 func serviceRoute(method, rest string) bool {
 	switch rest {
 	case "download/original", "download/summary":
-		return method == "GET"
+		return method == http.MethodGet
 	case "restore":
-		return method == "POST"
+		return method == http.MethodPost
 	default:
 		return false
 	}
