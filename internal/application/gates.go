@@ -6,8 +6,9 @@ import (
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
 
-// maxDocumentBytes es el techo del archivo, aplicado antes de gastar CPU en el Extractor.
-const maxDocumentBytes = 10 << 20
+// DefaultMaxDocumentBytes es el techo del archivo cuando la configuración no fija otro
+// (MAX_DOCUMENT_BYTES). Se aplica antes de gastar CPU en el Extractor.
+const DefaultMaxDocumentBytes = 10 << 20
 
 var pdfSignature = []byte("%PDF-")
 
@@ -15,11 +16,10 @@ var pdfSignature = []byte("%PDF-")
 // cliente.
 const mimeTypePDF = "application/pdf"
 
-// validateDocument es la puerta 1: admite el documento solo si entra en el tope y empieza con la
-// firma de PDF. Toma el tamaño y la cabecera en vez del archivo entero para no necesitar tenerlo
-// completo en memoria.
-func validateDocument(size int, head []byte) error {
-	if size > maxDocumentBytes {
+// validateDocument es la puerta 1: admite el documento solo si no supera maxBytes y empieza con la
+// firma de PDF.
+func validateDocument(size int, head []byte, maxBytes int) error {
+	if size > maxBytes {
 		return domain.ErrDocumentTooLarge
 	}
 	if !bytes.HasPrefix(head, pdfSignature) {

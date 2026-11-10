@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/api/middleware"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/application"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
 
@@ -41,6 +42,8 @@ type Deps struct {
 	RateLimit     *middleware.RateLimitConfig
 	ExtractGate   *middleware.Semaphore
 	SummaryGate   *middleware.Semaphore
+	// MaxDocumentBytes es el tope del archivo admitido (MAX_DOCUMENT_BYTES); 0 usa el default.
+	MaxDocumentBytes int
 }
 
 // NewRouter arma el router de gin con todas las rutas de openapi.yaml. El prefijo `/api/v1` se
@@ -53,6 +56,11 @@ func NewRouter(deps Deps) *gin.Engine {
 	}
 
 	router := gin.New()
+	if deps.MaxDocumentBytes <= 0 {
+		deps.MaxDocumentBytes = application.DefaultMaxDocumentBytes
+	}
+	// El formulario de admisión, acotado por MaxBytesReader, entra entero en memoria: nada a disco.
+	router.MaxMultipartMemory = int64(deps.MaxDocumentBytes) + multipartOverhead
 	if deps.Logger == nil {
 		deps.Logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
@@ -63,7 +71,9 @@ func NewRouter(deps Deps) *gin.Engine {
 		deps.SummaryGate = middleware.NewSemaphore(4)
 	}
 
-	router.Use(middleware.Recovery(), middleware.Correlation(), middleware.AccessLog(deps.Logger))
+	// AccessLog va por fuera de Recovery: así una petición que entra en panic también queda en el log
+	// de acceso, con su 500.
+	router.Use(middleware.Correlation(), middleware.AccessLog(deps.Logger), middleware.Recovery())
 	if deps.RateLimit != nil {
 		router.Use(middleware.RateLimit(*deps.RateLimit))
 	}
@@ -86,7 +96,7 @@ func registerRoutes(router *gin.Engine, deps Deps) {
 	withID.POST("/summary", middleware.Concurrency(deps.SummaryGate), handleSummary(deps.Summary, deps.PublicBaseURL))
 
 	router.GET("/api/v1/documents", handleProxy(deps.Proxy))
-	router.POST("/api/v1/documents/extract", middleware.Concurrency(deps.ExtractGate), handleExtract(deps.Extract, deps.PublicBaseURL))
+	router.POST("/api/v1/documents/extract", middleware.Concurrency(deps.ExtractGate), handleExtract(deps.Extract, deps.PublicBaseURL, deps.MaxDocumentBytes))
 }
 
 // validateDocumentID es la puerta de borde: un `document_id` que no es UUID no llega ni al caso de

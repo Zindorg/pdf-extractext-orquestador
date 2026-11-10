@@ -79,6 +79,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Todo lo que use el logger por defecto (Recovery, librerías) sale en el mismo JSON.
+	slog.SetDefault(logger)
 
 	extractor := http_extractor.New(cfg.ExtractorURL, cfg.ExtractorTimeout)
 	summarizer := http_summarizer.New(cfg.SummarizerURL, cfg.SummarizerTimeout)
@@ -88,7 +90,8 @@ func run() error {
 	publisher := redis_streams.New(cfg.RedisAddr, cfg.StreamName)
 	defer func() { _ = publisher.Close() }()
 
-	extractUC := application.NewExtractUseCase(extractor, summarizer, publisher, persister)
+	extractUC := application.NewExtractUseCase(extractor, summarizer, publisher, persister).
+		WithMaxDocumentBytes(cfg.MaxDocumentBytes)
 	summaryUC := application.NewSummaryUseCase(persister, summarizer, publisher)
 	proxyUC := application.NewProxyUseCase(persister)
 
@@ -102,14 +105,17 @@ func run() error {
 		RateLimit:     &middleware.RateLimitConfig{Limit: rateLimitPerWindow, Window: rateLimitWindow},
 		ExtractGate:   middleware.NewSemaphore(cfg.ExtractMaxInFlight),
 		SummaryGate:   middleware.NewSemaphore(cfg.SummaryMaxInFlight),
+
+		MaxDocumentBytes: cfg.MaxDocumentBytes,
 	})
 
 	if err := webrouter.Register(router, webrouter.Deps{
-		Extract:       extractUC,
-		Summary:       summaryUC,
-		Proxy:         proxyUC,
-		PublicBaseURL: cfg.PublicBaseURL,
-		Logger:        logger,
+		Extract:        extractUC,
+		Summary:        summaryUC,
+		Proxy:          proxyUC,
+		PublicBaseURL:  cfg.PublicBaseURL,
+		Logger:         logger,
+		MaxUploadBytes: cfg.MaxDocumentBytes,
 	}); err != nil {
 		return err
 	}

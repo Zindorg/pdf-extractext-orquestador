@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
@@ -8,9 +10,13 @@ import (
 
 // handleExtract admite un documento: valida el borde, corre el pipeline y responde `202` con el
 // header `X-Document-Id` y una `Location` absoluta a la lectura.
-func handleExtract(useCase ExtractUseCase, publicBaseURL string) gin.HandlerFunc {
+func handleExtract(useCase ExtractUseCase, publicBaseURL string, maxBytes int) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		in, err := parseIntake(c)
+		// Tope duro sobre el cuerpo: sin él, un archivo enorme se leería entero (y gin lo volcaría a
+		// disco) antes de poder rechazarlo.
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, int64(maxBytes)+multipartOverhead)
+
+		in, err := parseIntake(c, maxBytes)
 		if err != nil {
 			writeError(c, err)
 			return
@@ -29,7 +35,7 @@ func handleExtract(useCase ExtractUseCase, publicBaseURL string) gin.HandlerFunc
 
 		c.Header("X-Document-Id", string(result.DocumentID))
 		c.Header("Location", documentLocation(publicBaseURL, result.DocumentID))
-		c.JSON(202, newExtractAccepted(result))
+		c.JSON(http.StatusAccepted, newExtractAccepted(result))
 	}
 }
 

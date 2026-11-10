@@ -2,6 +2,7 @@
 package errors
 
 import (
+	stderrors "errors"
 	"net/http"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
@@ -22,7 +23,7 @@ func UserMessage(err error) string {
 	case "invalid_request":
 		return de.Message
 	case "payload_too_large":
-		return "El archivo supera los 10 MiB."
+		return "El archivo supera el tamaño máximo permitido."
 	case "unsupported_media_type":
 		return "El archivo no es un PDF válido (debe comenzar con %PDF-)."
 	case "extraction_failed":
@@ -85,11 +86,8 @@ func StatusCode(err error) int {
 	}
 }
 
+// isDomainErr reconoce un error de dominio aunque venga envuelto: los adaptadores lo envuelven con
+// la causa (fmt.Errorf("%w: ...")) y una aserción de tipo directa lo perdería.
 func isDomainErr(err error, target **domain.Error) bool {
-	// simple type assertion style
-	if e, ok := err.(*domain.Error); ok {
-		*target = e
-		return true
-	}
-	return false
+	return stderrors.As(err, target)
 }

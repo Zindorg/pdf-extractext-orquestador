@@ -12,7 +12,7 @@ import (
 func (h *Handlers) Home(c *gin.Context) {
 	h.renderer.HTML(c, http.StatusOK, "home.html", view.Home{
 		Base:   flash(c, "upload"),
-		MaxMiB: view.MaxUploadMiB,
+		MaxMiB: h.maxUploadMiB(),
 	})
 }
 
@@ -21,6 +21,6 @@ func (h *Handlers) homeError(c *gin.Context, status int, message string, summari
 	h.renderer.HTML(c, status, "home.html", view.Home{
 		Base:      view.Base{Nav: "upload", Error: message},
 		Summarize: summarize,
-		MaxMiB:    view.MaxUploadMiB,
+		MaxMiB:    h.maxUploadMiB(),
 	})
 }

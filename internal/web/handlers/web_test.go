@@ -13,6 +13,7 @@ import (
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/render"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/view"
 )
 
 const testID = "11111111-2222-4333-8444-555555555555"
@@ -124,7 +125,7 @@ func TestSubidaSinArchivoVacioYGrande(t *testing.T) {
 	if rec := e.upload("a.pdf", nil, false); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "vacío") {
 		t.Fatalf("vacío: %d", rec.Code)
 	}
-	big := bytes.Repeat([]byte("x"), maxUploadBytes+10)
+	big := bytes.Repeat([]byte("x"), (view.MaxUploadMiB<<20)+10)
 	if rec := e.upload("a.pdf", big, false); rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "10 MiB") {
 		t.Fatalf("grande: %d", rec.Code)
 	}

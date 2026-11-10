@@ -43,6 +43,8 @@ type Deps struct {
 	Proxy         Forwarder
 	PublicBaseURL string
 	Logger        *slog.Logger
+	// MaxUploadBytes es el tope del archivo (MAX_DOCUMENT_BYTES); 0 usa el default de la vista.
+	MaxUploadBytes int
 }
 
 // Handlers agrupa los handlers de la interfaz web.
@@ -54,6 +56,19 @@ type Handlers struct {
 // New arma los handlers.
 func New(d Deps, r *render.Renderer) *Handlers {
 	return &Handlers{deps: d, renderer: r}
+}
+
+// maxUploadBytes es el tope del archivo que admite el formulario.
+func (h *Handlers) maxUploadBytes() int {
+	if h.deps.MaxUploadBytes > 0 {
+		return h.deps.MaxUploadBytes
+	}
+	return view.MaxUploadMiB << 20
+}
+
+// maxUploadMiB es el tope en MiB, para los textos de la página.
+func (h *Handlers) maxUploadMiB() int {
+	return h.maxUploadBytes() >> 20
 }
 
 func (h *Handlers) log() *slog.Logger {
