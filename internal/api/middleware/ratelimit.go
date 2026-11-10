@@ -1,10 +1,8 @@
 package middleware
 
 import (
-	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,13 +18,15 @@ type RateLimitConfig struct {
 
 // rateLimiter cuenta peticiones por cliente en una ventana fija. El estado vive en memoria del
 // proceso, así que el límite es por réplica: un deployment con varias réplicas admite
-// proporcionalmente más (ADR-0007).
+// proporcionalmente más (ADR-0007). Las ventanas vencidas se barren una vez por ventana, para que
+// el mapa no crezca con cada IP que pasó alguna vez.
 type rateLimiter struct {
-	mu      sync.Mutex
-	limit   int
-	window  time.Duration
-	now     func() time.Time
-	buckets map[string]*bucket
+	mu        sync.Mutex
+	limit     int
+	window    time.Duration
+	now       func() time.Time
+	buckets   map[string]*bucket
+	lastSweep time.Time
 }
 
 type bucket struct {
@@ -54,25 +54,49 @@ func (l *rateLimiter) allow(client string) (bool, time.Duration) {
 	defer l.mu.Unlock()
 
 	now := l.now()
+	l.sweep(now)
+
 	current, ok := l.buckets[client]
 	if !ok || !now.Before(current.resetAt) {
 		l.buckets[client] = &bucket{count: 1, resetAt: now.Add(l.window)}
 		return true, 0
 	}
 	if current.count >= l.limit {
-		return false, time.Until(current.resetAt)
+		return false, current.resetAt.Sub(now)
 	}
 	current.count++
 	return true, 0
 }
 
-// RateLimit limita por IP. Confía solo en el primer `X-Forwarded-For`: es la IP del cliente detrás
-// de Traefik, y confiar en toda la lista dejaría que un cliente mintiera sobre su origen.
+// sweep borra las ventanas ya vencidas. Corre a lo sumo una vez por ventana: el costo es lineal en
+// los clientes activos y se amortiza entre todas las peticiones de esa ventana.
+func (l *rateLimiter) sweep(now time.Time) {
+	if now.Sub(l.lastSweep) < l.window {
+		return
+	}
+	for client, b := range l.buckets {
+		if !now.Before(b.resetAt) {
+			delete(l.buckets, client)
+		}
+	}
+	l.lastSweep = now
+}
+
+// size es la cantidad de clientes con ventana abierta. Pensado para tests.
+func (l *rateLimiter) size() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.buckets)
+}
+
+// RateLimit limita por IP de cliente. La IP sale de c.ClientIP(): gin solo considera
+// X-Forwarded-For cuando la conexión viene de un proxy confiable (engine.SetTrustedProxies, que se
+// configura con TRUSTED_PROXIES). Así un cliente que llega directo no puede elegir su IP mandando el
+// header.
 func RateLimit(cfg RateLimitConfig) gin.HandlerFunc {
 	limiter := newRateLimiter(cfg)
 	return func(c *gin.Context) {
-		client := clientIP(c)
-		allowed, retryAfter := limiter.allow(client)
+		allowed, retryAfter := limiter.allow(c.ClientIP())
 		if !allowed {
 			seconds := int(retryAfter.Seconds())
 			if seconds < 1 {
@@ -87,20 +111,4 @@ func RateLimit(cfg RateLimitConfig) gin.HandlerFunc {
 		}
 		c.Next()
 	}
-}
-
-// clientIP devuelve la IP del cliente: el primer `X-Forwarded-For` si existe, y si no la IP del
-// par. Traefik agrega el cliente real a la izquierda de la cadena.
-func clientIP(c *gin.Context) string {
-	if forwarded := c.GetHeader("X-Forwarded-For"); forwarded != "" {
-		first := strings.TrimSpace(strings.Split(forwarded, ",")[0])
-		if first != "" {
-			return first
-		}
-	}
-	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
-	if err != nil {
-		return c.Request.RemoteAddr
-	}
-	return host
 }

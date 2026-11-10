@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpretry"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
 
@@ -20,7 +21,8 @@ import (
 // admita más formatos, el valor debe venir del dominio en lugar de vivir acá.
 const mimeTypePDF = "application/pdf"
 
-// maxRetries es la cantidad de reintentos ante un error de red, con espera creciente. Ante un error
+// maxRetries es la cantidad de reintentos cuando el servicio no aceptó la conexión, con espera
+// creciente. Ante un error
 // de validación no se reintenta: re-enviar el mismo payload va a fallar igual (workers.md).
 const maxRetries = 2
 
@@ -37,13 +39,8 @@ func New(baseURL string, timeout time.Duration) *Client {
 	return &Client{
 		httpClient: &http.Client{Timeout: timeout},
 		endpoint:   strings.TrimRight(baseURL, "/") + "/extract",
-		backoff:    defaultBackoff,
+		backoff:    httpretry.LinearBackoff,
 	}
-}
-
-// defaultBackoff crece con el intento: 100ms, 200ms.
-func defaultBackoff(attempt int) time.Duration {
-	return time.Duration(attempt) * 100 * time.Millisecond
 }
 
 // Extract implementa domain.Extractor. Un 422 no es un error: el motivo vuelve en la Extraction y
@@ -57,22 +54,9 @@ func (c *Client) Extract(ctx context.Context, documentID domain.DocumentID, in d
 		if !retriable || attempt >= maxRetries {
 			return domain.Extraction{}, err
 		}
-		if err := sleep(ctx, c.backoff(attempt+1)); err != nil {
+		if err := httpretry.Sleep(ctx, c.backoff(attempt+1)); err != nil {
 			return domain.Extraction{}, fmt.Errorf("%w: %w", domain.ErrExtractorUnavailable, err)
 		}
-	}
-}
-
-// sleep espera d o cancela con el contexto. Un d menor o igual a cero no espera.
-func sleep(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return ctx.Err()
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(d):
-		return nil
 	}
 }
 
@@ -100,8 +84,8 @@ func (c *Client) extractOnce(ctx context.Context, documentID domain.DocumentID, 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// Error de red (timeout, conexión rechazada, corte): es el único caso reintentable.
-		return domain.Extraction{}, true, unavailable("llamar al Extractor", err)
+		// Solo se reintenta si el Extractor no aceptó la conexión; un timeout no (httpretry).
+		return domain.Extraction{}, httpretry.Retriable(err), unavailable("llamar al Extractor", err)
 	}
 	defer resp.Body.Close()
 

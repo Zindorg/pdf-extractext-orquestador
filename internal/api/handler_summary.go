@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
@@ -20,6 +22,6 @@ func handleSummary(useCase SummaryUseCase, publicBaseURL string) gin.HandlerFunc
 
 		c.Header("X-Document-Id", string(result.DocumentID))
 		c.Header("Location", documentLocation(publicBaseURL, result.DocumentID))
-		c.JSON(202, newSummaryAccepted(result))
+		c.JSON(http.StatusAccepted, newSummaryAccepted(result))
 	}
 }

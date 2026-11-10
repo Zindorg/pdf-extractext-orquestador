@@ -16,6 +16,7 @@ import (
 func (h *Handlers) RequestSummary(c *gin.Context) {
 	id := c.Param("id")
 	if _, err := h.deps.Summary.Execute(c.Request.Context(), domain.DocumentID(id)); err != nil {
+		_ = c.Error(err)
 		redirect(c, "/documents/"+id+"?error="+errCode(err))
 		return
 	}
@@ -31,6 +32,7 @@ func (h *Handlers) Delete(c *gin.Context) {
 		Path:   "/api/v1/documents/" + id,
 	})
 	if err != nil {
+		_ = c.Error(err)
 		redirect(c, "/documents/"+id+"?error="+errCode(err))
 		return
 	}
@@ -46,6 +48,7 @@ func (h *Handlers) Restore(c *gin.Context) {
 	})
 	if err != nil {
 		// Un documento borrado no se puede abrir: el error se muestra donde está la acción.
+		_ = c.Error(err)
 		redirect(c, "/documents?include_deleted=true&error="+errCode(err))
 		return
 	}

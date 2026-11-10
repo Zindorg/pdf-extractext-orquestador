@@ -1,0 +1,7 @@
+{
+  "acl": {
+    "tokens": {
+      "initial_management": "GENERAR-CON-uuidgen"
+    }
+  }
+}

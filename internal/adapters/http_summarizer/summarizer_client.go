@@ -11,10 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpretry"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
 
-// maxRetries es la cantidad de reintentos ante un error de red, con espera creciente. Ante un 4xx no
+// maxRetries es la cantidad de reintentos cuando el servicio no aceptó la conexión, con espera
+// creciente. Ante un 4xx no
 // se reintenta: re-enviar el mismo texto va a fallar igual (workers.md).
 const maxRetries = 2
 
@@ -31,13 +33,8 @@ func New(baseURL string, timeout time.Duration) *Client {
 	return &Client{
 		httpClient: &http.Client{Timeout: timeout},
 		endpoint:   strings.TrimRight(baseURL, "/") + "/summarize",
-		backoff:    defaultBackoff,
+		backoff:    httpretry.LinearBackoff,
 	}
-}
-
-// defaultBackoff crece con el intento: 100ms, 200ms.
-func defaultBackoff(attempt int) time.Duration {
-	return time.Duration(attempt) * 100 * time.Millisecond
 }
 
 // Summarize implementa domain.Summarizer. Un 422 (hoy solo `document_too_long`) es ErrSummaryFailed:
@@ -52,22 +49,9 @@ func (c *Client) Summarize(ctx context.Context, documentID domain.DocumentID, te
 		if !retriable || attempt >= maxRetries {
 			return domain.Summary{}, err
 		}
-		if err := sleep(ctx, c.backoff(attempt+1)); err != nil {
+		if err := httpretry.Sleep(ctx, c.backoff(attempt+1)); err != nil {
 			return domain.Summary{}, summaryFailed("esperar el reintento", err)
 		}
-	}
-}
-
-// sleep espera d o cancela con el contexto. Un d menor o igual a cero no espera.
-func sleep(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return ctx.Err()
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(d):
-		return nil
 	}
 }
 
@@ -88,8 +72,9 @@ func (c *Client) summarizeOnce(ctx context.Context, documentID domain.DocumentID
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// Error de red (timeout, conexión rechazada, corte): es el único caso reintentable.
-		return domain.Summary{}, true, summaryFailed("llamar al Resumidor", err)
+		// Solo se reintenta si el Resumidor no aceptó la conexión: reenviar tras un timeout encola
+		// otra vez un trabajo que el modelo quizá sigue procesando (httpretry).
+		return domain.Summary{}, httpretry.Retriable(err), summaryFailed("llamar al Resumidor", err)
 	}
 	defer resp.Body.Close()
 

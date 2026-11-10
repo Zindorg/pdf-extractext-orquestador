@@ -184,3 +184,32 @@ func TestUnknownRouteReturns404(t *testing.T) {
 		t.Fatalf("status = %d, quería 404", rec.Code)
 	}
 }
+
+func TestProxyHandlerSoloReenviaCabecerasPermitidas(t *testing.T) {
+	proxy := &proxyUseCaseStub{resp: domain.PersisterResponse{
+		StatusCode: http.StatusOK,
+		Header: map[string][]string{
+			"Content-Type":      {"text/plain; charset=utf-8"},
+			"Etag":              {`"v1"`},
+			"Set-Cookie":        {"sesion=1"},
+			"Connection":        {"keep-alive"},
+			"Transfer-Encoding": {"chunked"},
+		},
+		Body: []byte("hola"),
+	}}
+	rec := httptest.NewRecorder()
+	newTestRouter(&extractUseCaseStub{}, &summaryUseCaseStub{}, proxy).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/documents/"+testDocumentID, nil))
+
+	if rec.Header().Get("ETag") != `"v1"` || rec.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Fatalf("faltan cabeceras permitidas: %v", rec.Header())
+	}
+	for _, name := range []string{"Set-Cookie", "Connection", "Transfer-Encoding"} {
+		if rec.Header().Get(name) != "" {
+			t.Errorf("no debe reenviar %s", name)
+		}
+	}
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("falta nosniff")
+	}
+}

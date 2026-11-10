@@ -152,7 +152,7 @@ func TestExtractUseCasePublishesSummaryAfterOriginal(t *testing.T) {
 }
 
 func TestExtractUseCaseRejectsBeforeExtracting(t *testing.T) {
-	oversize := make([]byte, maxDocumentBytes+1)
+	oversize := make([]byte, DefaultMaxDocumentBytes+1)
 	copy(oversize, "%PDF-")
 
 	cases := []struct {

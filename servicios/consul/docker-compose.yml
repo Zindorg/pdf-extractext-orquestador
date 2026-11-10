@@ -1,0 +1,28 @@
+services:
+  consul:
+    image: hashicorp/consul:2.0.4
+    restart: unless-stopped
+    volumes:
+      - ./data:/consul/data
+      - ./config:/consul/config:ro
+      - /etc/localtime:/etc/localtime:ro
+    # Un solo servidor: -bootstrap-expect=1 alcanza. No combinar con -bootstrap (son excluyentes).
+    command: agent -server -ui -client=0.0.0.0 -bootstrap-expect=1 -data-dir=/consul/data -config-dir=/consul/config
+    networks:
+      - mired
+    # La API y la UI quedan solo en el host: con ACL en `allow`, publicarlas en 0.0.0.0 dejaría
+    # registrar servicios o escribir el KV a cualquiera de la red. Los servicios llegan por `mired`.
+    ports:
+      - "127.0.0.1:8500:8500"
+      - "127.0.0.1:8600:8600/tcp"
+      - "127.0.0.1:8600:8600/udp"
+    healthcheck:
+      # /v1/status/leader no requiere token y responde vacío mientras no hay líder.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8500/v1/status/leader | grep -q ':'"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+networks:
+  mired:
+    external: true

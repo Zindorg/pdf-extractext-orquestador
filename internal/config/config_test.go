@@ -132,3 +132,80 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConsulDesactivadoPorDefecto(t *testing.T) {
+	cfg, err := load(envMap(validEnv(nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConsulAddr != "" {
+		t.Errorf("ConsulAddr = %q, quería vacío", cfg.ConsulAddr)
+	}
+	if cfg.ServiceName != "pdf-extractext-orquestador" || cfg.Version != "dev" {
+		t.Errorf("defaults inesperados: name=%q version=%q", cfg.ServiceName, cfg.Version)
+	}
+}
+
+func TestLoadConsul(t *testing.T) {
+	cfg, err := load(envMap(validEnv(map[string]string{
+		"CONSUL_HTTP_ADDR":    "http://consul:8500",
+		"CONSUL_HTTP_TOKEN":   "tok",
+		"CONSUL_SERVICE_NAME": "orq",
+		"SERVICE_ADDRESS":     "orchestrator",
+		"VERSION":             "1.0.0",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConsulAddr != "http://consul:8500" || cfg.ConsulToken != "tok" || cfg.ServiceName != "orq" ||
+		cfg.ServiceAddress != "orchestrator" || cfg.Version != "1.0.0" {
+		t.Errorf("config de Consul inesperada: %+v", cfg)
+	}
+}
+
+func TestLoadReportaTodosLosErroresJuntos(t *testing.T) {
+	env := validEnv(map[string]string{
+		"PUBLIC_BASE_URL":   "api.example.com",
+		"EXTRACTOR_TIMEOUT": "0s",
+		"TRUSTED_PROXIES":   "10.0.0.0/8, no-es-red",
+	})
+	delete(env, "PERSISTER_URL")
+
+	_, err := load(envMap(env))
+	if err == nil {
+		t.Fatal("se esperaba error")
+	}
+	for _, want := range []string{"PUBLIC_BASE_URL", "EXTRACTOR_TIMEOUT", "TRUSTED_PROXIES", "PERSISTER_URL"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("el error no menciona %s: %v", want, err)
+		}
+	}
+}
+
+func TestLoadNuevasVariables(t *testing.T) {
+	cfg, err := load(envMap(validEnv(map[string]string{
+		"REDIS_URL":             "redis://:clave@redis:6379/1",
+		"STREAM_MAX_LEN":        "500",
+		"PERSISTER_TIMEOUT":     "5s",
+		"RATE_LIMIT_PER_MINUTE": "0",
+		"TRUSTED_PROXIES":       "172.16.0.0/12,10.0.0.1",
+		"LOG_LEVEL":             "DEBUG",
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RedisURL != "redis://:clave@redis:6379/1" || cfg.StreamMaxLen != 500 || cfg.PersisterTimeout != 5*time.Second ||
+		cfg.RateLimitPerMinute != 0 || len(cfg.TrustedProxies) != 2 || cfg.LogLevel != "debug" {
+		t.Fatalf("config inesperada: %+v", cfg)
+	}
+}
+
+func TestLoadArmaRedisURLDesdeRedisAddr(t *testing.T) {
+	cfg, err := load(envMap(validEnv(nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RedisURL != "redis://redis:6379" {
+		t.Fatalf("RedisURL = %q", cfg.RedisURL)
+	}
+}

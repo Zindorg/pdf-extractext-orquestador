@@ -3,8 +3,11 @@ package http_extractor
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"syscall"
 	"testing"
 	"time"
 
@@ -168,7 +171,7 @@ type failingTransport struct{ calls int }
 
 func (t *failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	t.calls++
-	return nil, errors.New("conexión rechazada")
+	return nil, &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}
 }
 
 func TestExtractRetriesNetworkErrors(t *testing.T) {

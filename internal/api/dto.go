@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"io"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -17,17 +19,29 @@ type intake struct {
 	Summarize bool
 }
 
-// parseIntake lee el formulario de admisión. El documento vive en RAM durante la petición y no se
-// guarda (Zero-Disk).
-func parseIntake(c *gin.Context) (intake, error) {
+// multipartOverhead es el margen sobre el tope del archivo para el resto del formulario multipart
+// (boundaries, cabeceras de cada parte y el campo `summarize`).
+const multipartOverhead = 1 << 20
+
+// parseIntake lee el formulario de admisión. El cuerpo ya viene acotado por limitBody, así que el
+// formulario entero cabe en la memoria que gin tiene para multipart y nada se vuelca a disco
+// (Zero-Disk).
+func parseIntake(c *gin.Context, maxBytes int) (intake, error) {
 	form, err := c.MultipartForm()
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return intake{}, domain.ErrDocumentTooLarge
+		}
 		return intake{}, domain.ErrInvalidRequest
 	}
 
 	documents := form.File["document"]
 	if len(documents) == 0 {
 		return intake{}, domain.ErrInvalidRequest
+	}
+	if documents[0].Size > int64(maxBytes) {
+		return intake{}, domain.ErrDocumentTooLarge
 	}
 	file, err := documents[0].Open()
 	if err != nil {

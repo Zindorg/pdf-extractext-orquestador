@@ -249,8 +249,6 @@ func TestPublishPropagatesStreamError(t *testing.T) {
 
 type unknownEvent struct{}
 
-func (unknownEvent) isEvent() {}
-
 // Ready reporta si el stream es alcanzable: el readiness responde 503 cuando Redis está caído,
 // porque sin stream no se puede publicar y admitir documentos solo produciría errores.
 func TestReadyReflectsRedisReachability(t *testing.T) {
@@ -262,5 +260,26 @@ func TestReadyReflectsRedisReachability(t *testing.T) {
 	unreachable := newPublisher(&fakeAdder{pingErr: errors.New("connection refused")})
 	if err := unreachable.Ready(t.Context()); err == nil {
 		t.Fatal("Ready() = nil con Redis caído, quería error")
+	}
+}
+
+func TestNewRechazaUnaURLInvalida(t *testing.T) {
+	if _, err := New(Options{URL: "http://redis:6379", Stream: "s"}); err == nil {
+		t.Fatal("se esperaba error con un esquema que no es redis")
+	}
+}
+
+func TestNewTomaContraseñaYMaxLen(t *testing.T) {
+	p, err := New(Options{URL: "redis://:clave@redis:6379/2", Stream: "s", MaxLen: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = p.Close() }()
+	adder := p.redis.(*redisXAdder)
+	if adder.maxLen != 500 {
+		t.Errorf("maxLen = %d", adder.maxLen)
+	}
+	if opts := adder.client.Options(); opts.Password != "clave" || opts.DB != 2 || opts.Addr != "redis:6379" {
+		t.Errorf("opciones = addr %q db %d", opts.Addr, opts.DB)
 	}
 }

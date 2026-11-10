@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
@@ -20,11 +22,18 @@ func handleProxy(useCase ProxyUseCase) gin.HandlerFunc {
 			return
 		}
 
-		for name, values := range response.Header {
-			for _, value := range values {
-				c.Writer.Header().Add(name, value)
+		header := http.Header(response.Header)
+		for _, name := range forwardedHeaders {
+			if value := header.Get(name); value != "" {
+				c.Header(name, value)
 			}
 		}
-		c.Data(response.StatusCode, c.Writer.Header().Get("Content-Type"), response.Body)
+		// El cuerpo puede ser texto del usuario: el navegador no debe adivinar otro tipo.
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Data(response.StatusCode, header.Get("Content-Type"), response.Body)
 	}
 }
+
+// forwardedHeaders son las cabeceras del Persistidor que llegan al cliente. Las demás —hop-by-hop
+// como Connection o Transfer-Encoding, Set-Cookie, Content-Length (la recalcula gin)— no se copian.
+var forwardedHeaders = []string{"Content-Type", "Content-Disposition", "ETag", "Last-Modified", "Cache-Control"}

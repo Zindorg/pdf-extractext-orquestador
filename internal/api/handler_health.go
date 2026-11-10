@@ -19,7 +19,9 @@ func handleReady(ready func(ctx context.Context) error) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if ready != nil {
 			if err := ready(c.Request.Context()); err != nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "reason": err.Error()})
+				// El motivo va al log, no al cuerpo: nombra direcciones internas (redis:6379).
+				_ = c.Error(err)
+				c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
 				return
 			}
 		}

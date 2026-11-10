@@ -70,8 +70,10 @@ var statusByCode = map[string]int{
 	"unsupported_media_type":   http.StatusUnsupportedMediaType,
 }
 
-// writeError responde un error con su status y su envoltorio JSON.
+// writeError responde un error con su status y su envoltorio JSON. El error original se adjunta al
+// contexto de gin para que el log de acceso registre la causa: el cuerpo no la expone, el log sí.
 func writeError(c *gin.Context, err error) {
+	_ = c.Error(err)
 	status, body := errorResponse(err)
 	c.JSON(status, body)
 }

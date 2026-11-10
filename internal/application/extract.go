@@ -17,11 +17,28 @@ type ExtractUseCase struct {
 	summarizer domain.Summarizer
 	publisher  domain.EventPublisher
 	persister  domain.PersisterProxy
+
+	maxDocumentBytes int
 }
 
-// NewExtractUseCase arma el caso de uso con sus tres colaboradores.
+// NewExtractUseCase arma el caso de uso con sus cuatro colaboradores y el tope de tamaño por defecto.
 func NewExtractUseCase(extractor domain.Extractor, summarizer domain.Summarizer, publisher domain.EventPublisher, persister domain.PersisterProxy) *ExtractUseCase {
-	return &ExtractUseCase{extractor: extractor, summarizer: summarizer, publisher: publisher, persister: persister}
+	return &ExtractUseCase{
+		extractor:        extractor,
+		summarizer:       summarizer,
+		publisher:        publisher,
+		persister:        persister,
+		maxDocumentBytes: DefaultMaxDocumentBytes,
+	}
+}
+
+// WithMaxDocumentBytes fija el tope de tamaño del documento (MAX_DOCUMENT_BYTES). Un valor no
+// positivo conserva el default.
+func (u *ExtractUseCase) WithMaxDocumentBytes(n int) *ExtractUseCase {
+	if n > 0 {
+		u.maxDocumentBytes = n
+	}
+	return u
 }
 
 // ingestion agrupa lo ya resuelto de una ingesta —identidad, texto y resumen— para no arrastrar
@@ -43,7 +60,7 @@ type ingestion struct {
 // resumen se resuelve antes de publicar nada, para que un fallo del Resumidor no deje un documento
 // a medias en el stream: si falla, no hay ninguna publicación y no hay nada que deshacer.
 func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument) (domain.IngestResult, error) {
-	if err := validateDocument(len(in.Bytes), in.Bytes); err != nil {
+	if err := validateDocument(len(in.Bytes), in.Bytes, u.maxDocumentBytes); err != nil {
 		return domain.IngestResult{}, err
 	}
 
@@ -87,7 +104,7 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 		extraction:    extraction,
 		summary:       summary,
 		summaryStatus: summaryStatus(in.Summarize),
-		mimeType:      "application/pdf",
+		mimeType:      mimeTypePDF,
 		summarize:     in.Summarize,
 		extractedAt:   time.Now().UTC(),
 		filename:      in.Filename,

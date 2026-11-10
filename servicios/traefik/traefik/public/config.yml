@@ -1,21 +1,17 @@
 http:
-  routers:
-    traefik:
-      rule: "Host(`traefik.universidad.localhost`)"
-      service: "api@internal"
-      tls:
-        domains:
-          - main: "universidad.localhost"
-            sans:
-              - "*.universidad.localhost"
-          - main: "universidad.local"
-            sans:
-              - "*.universidad.local"
   middlewares:
     orch-ratelimit:
       rateLimit:
         average: 100
         burst: 200
+    # Corta en el borde un cuerpo mayor que MAX_DOCUMENT_BYTES (10 MiB) + margen del multipart.
+    orch-body-limit:
+      buffering:
+        maxRequestBodyBytes: 11534336
+    orch-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
     orch-cb:
       circuitBreaker:
         expression: "NetworkErrorRatio() > 0.30 || ResponseCodeRatio(500, 600, 0, 600) > 0.25"

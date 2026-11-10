@@ -1,6 +1,9 @@
 package errors
 
 import (
+	"fmt"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
@@ -23,7 +26,7 @@ func TestUserMessageExtractionFailedUnknownReason(t *testing.T) {
 }
 
 func TestUserMessagePayloadTooLarge(t *testing.T) {
-	if got := UserMessage(domain.ErrDocumentTooLarge); got != "El archivo supera los 10 MiB." {
+	if got := UserMessage(domain.ErrDocumentTooLarge); got != "El archivo supera el tamaño máximo permitido." {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -43,5 +46,15 @@ func TestUserMessageSummaryPending(t *testing.T) {
 func TestUserMessageSummaryNotAvailable(t *testing.T) {
 	if got := UserMessage(domain.ErrSummaryNotAvailable); got != "Este documento no tiene resumen o no se solicitó su generación." {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestErrorEnvueltoConservaSuCodigo(t *testing.T) {
+	err := fmt.Errorf("%w: llamar al Extractor: timeout", domain.ErrExtractorUnavailable)
+	if got := StatusCode(err); got != http.StatusServiceUnavailable {
+		t.Fatalf("StatusCode = %d, quería 503", got)
+	}
+	if got := UserMessage(err); !strings.Contains(got, "extracción") {
+		t.Fatalf("UserMessage = %q, quería el mensaje del Extractor", got)
 	}
 }

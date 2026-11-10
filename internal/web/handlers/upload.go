@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -14,23 +15,22 @@ import (
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/view"
 )
 
-const (
-	maxUploadBytes = view.MaxUploadMiB << 20
-	// El cuerpo admite un margen sobre el tope del archivo para el resto del formulario multipart.
-	maxBodyBytes = maxUploadBytes + 1<<20
-)
+// multipartOverhead es el margen sobre el tope del archivo para el resto del formulario multipart.
+const multipartOverhead = 1 << 20
 
 // Upload recibe el PDF, lo procesa y redirige al detalle del documento.
 func (h *Handlers) Upload(c *gin.Context) {
 	// Tope duro sobre el cuerpo: sin él, un archivo enorme se leería (y se volcaría a disco) antes de
 	// poder rechazarlo.
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+	maxUploadBytes := h.maxUploadBytes()
+	tooLarge := fmt.Sprintf("El archivo supera los %d MiB.", h.maxUploadMiB())
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, int64(maxUploadBytes)+multipartOverhead)
 
 	file, header, err := c.Request.FormFile("document")
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			h.homeError(c, http.StatusRequestEntityTooLarge, "El archivo supera los 10 MiB.", false)
+			h.homeError(c, http.StatusRequestEntityTooLarge, tooLarge, false)
 			return
 		}
 		h.homeError(c, http.StatusBadRequest, "Seleccioná un archivo PDF para subir.", false)
@@ -40,7 +40,7 @@ func (h *Handlers) Upload(c *gin.Context) {
 
 	summarize := c.PostForm("summarize") == "true"
 
-	data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
+	data, err := io.ReadAll(io.LimitReader(file, int64(maxUploadBytes)+1))
 	if err != nil {
 		h.homeError(c, http.StatusBadRequest, "No se pudo leer el archivo.", summarize)
 		return
@@ -50,7 +50,7 @@ func (h *Handlers) Upload(c *gin.Context) {
 		h.homeError(c, http.StatusBadRequest, "El archivo está vacío.", summarize)
 		return
 	case len(data) > maxUploadBytes:
-		h.homeError(c, http.StatusRequestEntityTooLarge, "El archivo supera los 10 MiB.", summarize)
+		h.homeError(c, http.StatusRequestEntityTooLarge, tooLarge, summarize)
 		return
 	}
 
@@ -61,7 +61,9 @@ func (h *Handlers) Upload(c *gin.Context) {
 		Metadata:  map[string]any{},
 	})
 	if err != nil {
-		if _, typed := err.(*domain.Error); !typed {
+		_ = c.Error(err)
+		var de *domain.Error
+		if !errors.As(err, &de) {
 			h.log().Error("fallo al procesar un documento", "error", err)
 		}
 		h.homeError(c, weberrors.StatusCode(err), weberrors.UserMessage(err), summarize)

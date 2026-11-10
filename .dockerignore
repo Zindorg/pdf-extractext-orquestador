@@ -1,32 +1,30 @@
 # El contexto de build no necesita nada más que el código Go. Mantener el contexto chico acelera el
 # build y evita filtrar secretos o artefactos locales a la imagen.
+# Nota: en .dockerignore los patrones sin `**/` solo aplican a la raíz del contexto.
 .git/
 .gitignore
 .github/
 
 # Documentación y material de trabajo
-*.md
+**/*.md
 docs/
 tasks/
-analisis-*.md
-CONTEXT.md
-CONTEXT-MAP.md
-ARCHITECTURE_*.md
-Especificaciones_*.md
 LICENSE
 
-# Despliegue: la imagen del servicio no contiene composes ni configs de Traefik. `mocks/` sí entra
-# porque el Dockerfile de los mocks comparte este contexto (mocks/Dockerfile lo copia y compila).
+# Despliegue: la imagen del servicio no contiene composes ni configs de infraestructura. `mocks/` sí
+# entra porque el Dockerfile de los mocks comparte este contexto (mocks/Dockerfile lo copia y compila).
 Dockerfile
 .dockerignore
-compose*.yml
+**/compose*.yml
+**/docker-compose*.yml
+servicios/
 traefik/
-.env
-.env.
+**/.env
+**/.env.*
 
-# Artefactos de Go
-*.test
-*.out
-coverage.*
+# Artefactos de Go (`server` queda solo en la raíz a propósito: `**/server` excluiría cmd/server)
+**/*.test
+**/*.out
+**/coverage.*
 bin/
 server

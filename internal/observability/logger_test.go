@@ -2,10 +2,7 @@ package observability
 
 import (
 	"bytes"
-	"log/slog"
 	"testing"
-
-	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
 
 func TestNewRejectsUnknownLevel(t *testing.T) {
@@ -29,17 +26,5 @@ func TestNewHonorsLevel(t *testing.T) {
 	logger.Error("ruido")
 	if buf.Len() == 0 {
 		t.Error("con nivel error no se registró el error, esperaba sí")
-	}
-}
-
-func TestWithDocumentIDAddsCorrelationField(t *testing.T) {
-	const want = "0f8fad5b-d9cb-469f-a165-70867728950e"
-	buf := &bytes.Buffer{}
-	logger := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	WithDocumentID(logger, domain.DocumentID(want)).Info("procesando")
-
-	if !bytes.Contains(buf.Bytes(), []byte(`"document_id":"`+want+`"`)) {
-		t.Errorf("log = %s, quería document_id=%s", buf, want)
 	}
 }

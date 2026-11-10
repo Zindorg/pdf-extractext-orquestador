@@ -1,0 +1,3 @@
+# Estado de Consul y secretos: nunca al repo.
+data/
+config/acl-tokens.json

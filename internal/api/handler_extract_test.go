@@ -71,7 +71,7 @@ func multipartBody(t *testing.T, fields map[string]string, document []byte) (*by
 }
 
 func newTestRouter(extract *extractUseCaseStub, summary *summaryUseCaseStub, proxy *proxyUseCaseStub) http.Handler {
-	return NewRouter(Deps{
+	return mustNewRouter(Deps{
 		Extract:       extract,
 		Summary:       summary,
 		Proxy:         proxy,

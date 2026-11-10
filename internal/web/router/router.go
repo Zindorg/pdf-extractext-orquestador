@@ -13,11 +13,12 @@ import (
 
 // Deps son las dependencias de la interfaz web.
 type Deps struct {
-	Extract       *application.ExtractUseCase
-	Summary       *application.SummaryUseCase
-	Proxy         *application.ProxyUseCase
-	PublicBaseURL string
-	Logger        *slog.Logger
+	Extract        *application.ExtractUseCase
+	Summary        *application.SummaryUseCase
+	Proxy          *application.ProxyUseCase
+	PublicBaseURL  string
+	Logger         *slog.Logger
+	MaxUploadBytes int
 }
 
 // Register agrega las rutas de la interfaz web al router.
@@ -27,11 +28,12 @@ func Register(r *gin.Engine, d Deps) error {
 		return err
 	}
 	h := handlers.New(handlers.Deps{
-		Extract:       d.Extract,
-		Summary:       d.Summary,
-		Proxy:         d.Proxy,
-		PublicBaseURL: d.PublicBaseURL,
-		Logger:        d.Logger,
+		Extract:        d.Extract,
+		Summary:        d.Summary,
+		Proxy:          d.Proxy,
+		PublicBaseURL:  d.PublicBaseURL,
+		Logger:         d.Logger,
+		MaxUploadBytes: d.MaxUploadBytes,
 	}, rend)
 
 	// Las cabeceras de seguridad van antes de registrar las rutas web, para que cubran también los

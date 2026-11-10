@@ -97,9 +97,9 @@ func TestDetalleSinEsperaNoRecarga(t *testing.T) {
 func TestDetalleSinInlineParaLaCSP(t *testing.T) {
 	// La CSP es default-src 'self': un atributo on*= o style= en línea queda bloqueado en silencio.
 	pages := map[string]any{
-		"home.html":           view.Home{MaxMiB: 10},
+		"home.html":            view.Home{MaxMiB: 10},
 		"document_detail.html": view.BuildDetail(view.PersistedDoc{DocumentID: "id", SummaryStatus: "FAILED"}, "id"),
-		"documents_list.html": view.BuildList(view.ParseListQuery("", "", "", "", ""), view.ListPayload{}),
+		"documents_list.html":  view.BuildList(view.ParseListQuery("", "", "", "", ""), view.ListPayload{}),
 	}
 	for name, data := range pages {
 		html := mustRender(t, name, data)

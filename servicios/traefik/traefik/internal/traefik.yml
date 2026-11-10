@@ -1,5 +1,5 @@
 global:
-  sendAnonymousUsage: true
+  sendAnonymousUsage: false
 
 api:
   dashboard: false
@@ -19,7 +19,7 @@ providers:
 
 log:
   level: INFO
-  format: common
+  format: json
 
 entryPoints:
   http:
