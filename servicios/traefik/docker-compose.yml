@@ -1,0 +1,35 @@
+services:
+  # ---------- Bordes ----------
+  traefik-public:
+    image: traefik:v3.6
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.44}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/public/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/public/config.yml:/etc/traefik/config.yml:ro
+      - ./certs:/etc/certs:ro
+    networks:
+      - public-net
+
+  traefik-internal:
+    image: traefik:v3.6
+    restart: unless-stopped
+    environment:
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.44}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/internal/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/internal/config.yml:/etc/traefik/config.yml:ro
+    networks:
+      mired:
+        aliases: [extractor.internal, summarizer.internal, persister.internal]
+networks:
+  public-net:
+    external: true
+  mired:
+    external: true        

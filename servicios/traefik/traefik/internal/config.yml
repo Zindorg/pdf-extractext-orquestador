@@ -1,0 +1,12 @@
+http:
+     middlewares:
+       int-ratelimit:
+         rateLimit:
+           average: 100
+           burst: 200
+       int-cb:
+         circuitBreaker:
+           expression: "NetworkErrorRatio() > 0.30 || ResponseCodeRatio(500, 600, 0, 600) > 0.25"
+       int-retry:
+         retry:
+           attempts: 2

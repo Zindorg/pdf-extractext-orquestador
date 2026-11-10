@@ -1,0 +1,26 @@
+global:
+  sendAnonymousUsage: true
+
+api:
+  dashboard: false
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    watch: true
+    exposedByDefault: false
+    network: mired
+    constraints: "Label(`traefik.edge`,`internal`)"
+
+  file:
+    filename: /etc/traefik/config.yml
+    watch: true
+
+
+log:
+  level: INFO
+  format: common
+
+entryPoints:
+  http:
+    address: ":80"

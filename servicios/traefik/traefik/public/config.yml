@@ -1,0 +1,26 @@
+http:
+  routers:
+    traefik:
+      rule: "Host(`traefik.universidad.localhost`)"
+      service: "api@internal"
+      tls:
+        domains:
+          - main: "universidad.localhost"
+            sans:
+              - "*.universidad.localhost"
+          - main: "universidad.local"
+            sans:
+              - "*.universidad.local"
+  middlewares:
+    orch-ratelimit:
+      rateLimit:
+        average: 100
+        burst: 200
+    orch-cb:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.30 || ResponseCodeRatio(500, 600, 0, 600) > 0.25"
+
+tls:
+  certificates:
+    - certFile: "/etc/certs/cert.pem"
+      keyFile: "/etc/certs/key.pem"

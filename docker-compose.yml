@@ -1,26 +1,22 @@
-# Orquestador: punto de entrada público. No publica puertos al host: solo `traefik-public` expone
-# 80/443, y por eso el borde es el único camino (ADR-0005). Vive en `public-net` (borde) y `mired`
-# (workers, Redis y Persistidor), nunca en `db-net`.
 services:
   orchestrator:
-    image: pdf-extractext-orquestador:v${VERSION:-0.1.0}
+    image: pdf-extractext-orquestador:${VERSION}
     build: ../pdf-extractext-orquestador
     restart: unless-stopped
     environment:
       - TZ=${TZ:-America/Argentina/Mendoza}
       - HTTP_PORT=8080
+      - PUBLIC_HOST=${PUBLIC_HOST:?definir PUBLIC_HOST}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:?definir PUBLIC_BASE_URL}
       - EXTRACTOR_URL=http://extractor.internal
       - SUMMARIZER_URL=http://summarizer.internal
       - PERSISTER_URL=http://persister.internal
       - REDIS_ADDR=redis:6379
       - STREAM_NAME=${STREAM_NAME:-document-events}
+      - TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
     networks:
       - public-net
       - mired
-    depends_on:
-      redis: { condition: service_healthy }
-      traefik-internal: { condition: service_started }
     labels:
       - traefik.enable=true
       - traefik.edge=public
@@ -46,3 +42,6 @@ networks:
     external: true
   mired:
     external: true
+
+volumes:
+  redis-data:
