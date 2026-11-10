@@ -1,4 +1,4 @@
-package http_extractor
+package httpextractor
 
 import (
 	"encoding/json"

@@ -57,11 +57,11 @@ func TestClassifyExtractionReason(t *testing.T) {
 			if !errors.As(err, &domainErr) {
 				t.Fatalf("classifyExtractionReason(%q) = %v, quería *domain.Error", reason, err)
 			}
-			if domainErr.Code != "extraction_failed" {
-				t.Fatalf("code = %q, quería extraction_failed", domainErr.Code)
+			if domainErr.Code() != "extraction_failed" {
+				t.Fatalf("code = %q, quería extraction_failed", domainErr.Code())
 			}
-			if domainErr.Reason != reason {
-				t.Fatalf("reason = %q, quería %q", domainErr.Reason, reason)
+			if domainErr.Reason() != reason {
+				t.Fatalf("reason = %q, quería %q", domainErr.Reason(), reason)
 			}
 		})
 	}

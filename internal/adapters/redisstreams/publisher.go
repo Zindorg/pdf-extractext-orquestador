@@ -1,7 +1,7 @@
-// Package redis_streams publica eventos en el stream de ingesta (events.md). Es la única función
+// Package redisstreams publica eventos en el stream de ingesta (events.md). Es la única función
 // de Redis del servicio: el Orquestador hace `XADD` y nada más —no lee, no consume, no mantiene el
 // grupo (ADR-0001).
-package redis_streams
+package redisstreams
 
 import (
 	"context"

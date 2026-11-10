@@ -13,9 +13,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
-	weberrors "github.com/Zindorg/pdf-extractext-orquestador/internal/web/errors"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/render"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/view"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/weberrors"
 )
 
 // Los casos de uso se piden como interfaces mínimas: los de application las cumplen y los tests
@@ -82,7 +82,7 @@ func (h *Handlers) log() *slog.Logger {
 func errCode(err error) string {
 	var de *domain.Error
 	if errors.As(err, &de) {
-		return de.Code
+		return de.Code()
 	}
 	return "internal"
 }
@@ -98,7 +98,7 @@ func redirect(c *gin.Context, location string) {
 func flash(c *gin.Context, nav string) view.Base {
 	b := view.Base{Nav: nav, Notice: view.NoticeText(c.Query("notice"))}
 	if code := c.Query("error"); code != "" {
-		b.Error = weberrors.UserMessage(&domain.Error{Code: code, Message: "La solicitud no es válida."})
+		b.Error = weberrors.UserMessage(domain.NewError(code, "La solicitud no es válida."))
 	}
 	return b
 }
@@ -118,13 +118,19 @@ func (h *Handlers) page(c *gin.Context, status int, title, message, backURL, bac
 // documentError traduce un error al consultar o descargar un documento.
 func (h *Handlers) documentError(c *gin.Context, err error, id string) {
 	var de *domain.Error
-	if !errors.As(err, &de) {
+	if !errors.As(err, &de) || errors.Is(err, domain.ErrPersisterUnavailable) {
+		// Persistidor caído (503) o respuesta que no se pudo interpretar (502): no es un problema
+		// del documento, así que se loguea con la causa.
+		status := http.StatusBadGateway
+		if errors.Is(err, domain.ErrPersisterUnavailable) {
+			status = http.StatusServiceUnavailable
+		}
 		h.log().Error("fallo al consultar el Persistidor", "document_id", id, "error", err)
-		h.page(c, http.StatusBadGateway, "No pudimos consultar el documento",
+		h.page(c, status, "No pudimos consultar el documento",
 			"El servicio de documentos no respondió. Probá de nuevo en unos segundos.", "/documents", "Volver al listado")
 		return
 	}
-	switch de.Code {
+	switch de.Code() {
 	case "document_not_found":
 		h.page(c, http.StatusNotFound, "No encontramos el documento",
 			"No existe, fue borrado, o todavía no terminó de guardarse. Si lo acabás de subir, probá de nuevo en unos segundos.",

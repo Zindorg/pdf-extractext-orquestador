@@ -1,4 +1,4 @@
-package http_persister
+package httppersister
 
 import (
 	"errors"
@@ -97,10 +97,10 @@ func TestDoTranslatesKnownEnvelopeCode(t *testing.T) {
 			if !errors.As(err, &domErr) {
 				t.Fatalf("Do() = %v, quería un error de dominio tipado", err)
 			}
-			if domErr.Code != tc.code {
-				t.Errorf("Code = %q, quería %q", domErr.Code, tc.code)
+			if domErr.Code() != tc.code {
+				t.Errorf("Code = %q, quería %q", domErr.Code(), tc.code)
 			}
-			if domErr.Message == "detalle interno del Persistidor" {
+			if domErr.Message() == "detalle interno del Persistidor" {
 				t.Error("el mensaje del Persistidor no debe exponerse al cliente")
 			}
 		})
@@ -134,8 +134,8 @@ func TestDoFallsBackToStatusWhenEnvelopeIsUnreadable(t *testing.T) {
 			if !errors.As(err, &domErr) {
 				t.Fatalf("Do() = %v, quería un error de dominio tipado", err)
 			}
-			if domErr.Code != tc.code {
-				t.Errorf("Code = %q, quería %q", domErr.Code, tc.code)
+			if domErr.Code() != tc.code {
+				t.Errorf("Code = %q, quería %q", domErr.Code(), tc.code)
 			}
 		})
 	}
@@ -157,7 +157,7 @@ func TestDoTreatsConflictWithoutKnownCodeAsUnexpected(t *testing.T) {
 
 	var domErr *domain.Error
 	if errors.As(err, &domErr) {
-		t.Fatalf("Do() = %v, no quería error de dominio: el code no es del vocabulario", domErr.Code)
+		t.Fatalf("Do() = %v, no quería error de dominio: el code no es del vocabulario", domErr.Code())
 	}
 	if err == nil {
 		t.Fatal("Do() no falló, quería un error")
@@ -177,9 +177,42 @@ func TestDoFailsOnTransportError(t *testing.T) {
 		t.Fatal("Do() no falló contra un servidor caído")
 	}
 
-	var domErr *domain.Error
-	if errors.As(err, &domErr) {
-		t.Errorf("Do() = %v, un fallo de transporte no es un error del documento", domErr.Code)
+	if !errors.Is(err, domain.ErrPersisterUnavailable) {
+		t.Errorf("Do() = %v, un fallo de transporte es persister_unavailable, no un error del documento", err)
+	}
+}
+
+func TestDoTraduceErroresSinCodigoPorStatus(t *testing.T) {
+	cases := []struct {
+		status int
+		want   error
+	}{
+		{http.StatusTooManyRequests, domain.ErrRateLimited},
+		{http.StatusInternalServerError, domain.ErrPersisterUnavailable},
+		{http.StatusServiceUnavailable, domain.ErrPersisterUnavailable},
+	}
+	for _, tc := range cases {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tc.status)
+		}))
+		_, err := testClient(server.URL).Do(t.Context(), domain.PersisterRequest{Method: http.MethodGet, Path: "/api/v1/documents"})
+		server.Close()
+		if !errors.Is(err, tc.want) {
+			t.Errorf("status %d: Do() = %v, quería %v", tc.status, err, tc.want)
+		}
+	}
+}
+
+func TestDoReconoceRateLimitedPorCodigo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"code":"rate_limited","message":"despacio"}`))
+	}))
+	defer server.Close()
+
+	_, err := testClient(server.URL).Do(t.Context(), domain.PersisterRequest{Method: http.MethodGet, Path: "/api/v1/documents"})
+	if !errors.Is(err, domain.ErrRateLimited) {
+		t.Fatalf("Do() = %v, quería ErrRateLimited", err)
 	}
 }
 
@@ -192,5 +225,51 @@ func TestDoRechazaUnaRespuestaMayorAlTope(t *testing.T) {
 	client := New(server.URL, time.Second).WithMaxResponseBytes(1024)
 	if _, err := client.Do(t.Context(), domain.PersisterRequest{Method: http.MethodGet, Path: "/api/v1/documents"}); err == nil {
 		t.Fatal("se esperaba error: la respuesta supera el tope")
+	}
+}
+
+func TestFindActiveByChecksum(t *testing.T) {
+	cases := []struct {
+		name      string
+		status    int
+		body      string
+		wantFound bool
+		wantErr   error
+	}{
+		{"existe", http.StatusOK, `{"document_id":"d1","summary_status":"RESOLVED","summary":"r","extracted_text":"ignorado"}`, true, nil},
+		{"no existe", http.StatusNotFound, `{"code":"document_not_found"}`, false, nil},
+		{"persistidor caído", http.StatusServiceUnavailable, ``, false, domain.ErrPersisterUnavailable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var path string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path = r.URL.Path
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			doc, found, err := testClient(server.URL).FindActiveByChecksum(t.Context(), "abc")
+			if path != "/api/v1/documents/checksum/abc" {
+				t.Errorf("path = %q", path)
+			}
+			if found != tc.wantFound || (tc.wantErr == nil && err != nil) || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
+				t.Fatalf("found = %v, err = %v", found, err)
+			}
+			if tc.wantFound && (doc.DocumentID != "d1" || doc.SummaryStatus != domain.SummaryResolved || doc.Summary != "r") {
+				t.Errorf("doc = %+v", doc)
+			}
+		})
+	}
+}
+
+func TestFindActiveByChecksumConCuerpoIlegible(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("no es json"))
+	}))
+	defer server.Close()
+	if _, found, err := testClient(server.URL).FindActiveByChecksum(t.Context(), "abc"); err == nil || found {
+		t.Fatalf("found = %v, err = %v; quería error", found, err)
 	}
 }

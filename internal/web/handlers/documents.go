@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
-	weberrors "github.com/Zindorg/pdf-extractext-orquestador/internal/web/errors"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/view"
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/web/weberrors"
 )
 
 // List muestra el listado paginado con filtros.

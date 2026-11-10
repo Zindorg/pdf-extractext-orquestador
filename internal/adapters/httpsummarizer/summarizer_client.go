@@ -1,6 +1,6 @@
-// Package http_summarizer implementa el cliente HTTP del Resumidor contra su contrato en
+// Package httpsummarizer implementa el cliente HTTP del Resumidor contra su contrato en
 // docs/contracts/workers.md.
-package http_summarizer
+package httpsummarizer
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpclient"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/adapters/httpretry"
 	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
@@ -31,7 +32,7 @@ type Client struct {
 // dado. El timeout es holgado por diseño: el modelo local es serializado y tarda minutos (workers.md).
 func New(baseURL string, timeout time.Duration) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: httpclient.New(timeout),
 		endpoint:   strings.TrimRight(baseURL, "/") + "/summarize",
 		backoff:    httpretry.LinearBackoff,
 	}

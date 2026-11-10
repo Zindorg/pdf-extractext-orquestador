@@ -1,0 +1,59 @@
+# Smoke local: mocks de los tres workers, enrutados por traefik-internal con los mismos nombres que en
+# producción (extractor.internal, summarizer.internal, persister.internal). No se despliegan.
+#   docker compose -f docker-compose.yml -f compose.mocks.yml up -d --build
+x-mock-build: &mock-build
+  context: .
+  dockerfile: mocks/Dockerfile
+
+x-internal-labels: &internal-labels
+  traefik.enable: "true"
+  traefik.edge: internal
+  traefik.docker.network: mired
+
+services:
+  extractor-mock:
+    build:
+      <<: *mock-build
+      args: { CMD: extractor }
+    restart: unless-stopped
+    environment:
+      - EXTRACTOR_MOCK_DELAY_MS=${EXTRACTOR_MOCK_DELAY_MS:-0}
+    networks: [mired]
+    labels:
+      <<: *internal-labels
+      traefik.http.routers.extractor-mock.rule: Host(`extractor.internal`)
+      traefik.http.routers.extractor-mock.entrypoints: http
+      traefik.http.services.extractor-mock.loadbalancer.server.port: "8080"
+
+  summarizer-mock:
+    build:
+      <<: *mock-build
+      args: { CMD: summarizer }
+    restart: unless-stopped
+    environment:
+      - SUMMARIZER_MOCK_DELAY_MS=${SUMMARIZER_MOCK_DELAY_MS:-0}
+    networks: [mired]
+    labels:
+      <<: *internal-labels
+      traefik.http.routers.summarizer-mock.rule: Host(`summarizer.internal`)
+      traefik.http.routers.summarizer-mock.entrypoints: http
+      traefik.http.services.summarizer-mock.loadbalancer.server.port: "8080"
+
+  persister-mock:
+    build:
+      <<: *mock-build
+      args: { CMD: persister }
+    restart: unless-stopped
+    environment:
+      - REDIS_ADDR=redis:6379
+      - STREAM_NAME=${STREAM_NAME:-document-events}
+    networks: [mired]
+    labels:
+      <<: *internal-labels
+      traefik.http.routers.persister-mock.rule: Host(`persister.internal`)
+      traefik.http.routers.persister-mock.entrypoints: http
+      traefik.http.services.persister-mock.loadbalancer.server.port: "8083"
+
+networks:
+  mired:
+    external: true

@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -19,6 +21,8 @@ type ExtractUseCase struct {
 	persister  domain.PersisterProxy
 
 	maxDocumentBytes int
+	now              func() time.Time
+	logger           *slog.Logger
 }
 
 // NewExtractUseCase arma el caso de uso con sus cuatro colaboradores y el tope de tamaño por defecto.
@@ -29,7 +33,18 @@ func NewExtractUseCase(extractor domain.Extractor, summarizer domain.Summarizer,
 		publisher:        publisher,
 		persister:        persister,
 		maxDocumentBytes: DefaultMaxDocumentBytes,
+		now:              time.Now,
+		logger:           slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}
+}
+
+// WithLogger fija el logger para lo que el caso de uso resuelve sin fallar la petición (por
+// ejemplo, una búsqueda de duplicados que no respondió).
+func (u *ExtractUseCase) WithLogger(logger *slog.Logger) *ExtractUseCase {
+	if logger != nil {
+		u.logger = logger
+	}
+	return u
 }
 
 // WithMaxDocumentBytes fija el tope de tamaño del documento (MAX_DOCUMENT_BYTES). Un valor no
@@ -75,22 +90,8 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 	}
 
 	checksum := domain.NewChecksum(extraction.Text)
-	// Duplicado: consulta por checksum antes de resumir/publicar. El lookup no es atómico con la
-	// publicación; la garantía real es el índice único parcial del Persistidor (events.md).
-	if u.persister != nil {
-		if existing, found, err := u.persister.FindActiveByChecksum(ctx, checksum); err == nil && found {
-			return domain.IngestResult{
-				DocumentID:       existing.DocumentID,
-				Filename:         in.Filename,
-				Checksum:         checksum,
-				DeliveryStatus:   domain.DeliveryAvailable,
-				SummaryStatus:    existing.SummaryStatus,
-				SummaryText:      existing.Summary,
-				SummaryTimeMS:    0,
-				ExtractionTimeMS: extraction.TimeMS,
-				Warnings:         extraction.Warnings,
-			}, nil
-		}
+	if existing, found := u.findDuplicate(ctx, documentID, checksum); found {
+		return u.resolveDuplicate(ctx, in, existing, checksum, extraction)
 	}
 
 	summary, err := u.summarize(ctx, in.Summarize, documentID, extraction.Text)
@@ -106,7 +107,7 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 		summaryStatus: summaryStatus(in.Summarize),
 		mimeType:      mimeTypePDF,
 		summarize:     in.Summarize,
-		extractedAt:   time.Now().UTC(),
+		extractedAt:   u.now().UTC(),
 		filename:      in.Filename,
 		metadata:      in.Metadata,
 	}
@@ -116,6 +117,59 @@ func (u *ExtractUseCase) Execute(ctx context.Context, in domain.IncomingDocument
 	}
 
 	return ing.result(in.Filename), nil
+}
+
+// findDuplicate busca un documento activo con el mismo contenido. Es una optimización, no la
+// garantía: el lookup no es atómico con la publicación y la garantía real es el índice único parcial
+// del Persistidor (events.md). Por eso, si la consulta falla, la ingesta sigue como si no hubiera
+// duplicado y el error queda en el log.
+func (u *ExtractUseCase) findDuplicate(ctx context.Context, documentID domain.DocumentID, checksum domain.Checksum) (domain.StoredDocumentSummary, bool) {
+	existing, found, err := u.persister.FindActiveByChecksum(ctx, checksum)
+	if err != nil {
+		u.logger.Warn("no se pudo consultar duplicados; se ingiere como documento nuevo",
+			"document_id", documentID, "checksum", checksum, "error", err)
+		return domain.StoredDocumentSummary{}, false
+	}
+	return existing, found
+}
+
+// resolveDuplicate responde con el documento que ya existe. Si el cliente pidió resumen y el
+// existente no lo tiene ni lo está esperando (NOT_REQUESTED o FAILED), lo resume ahora y publica
+// `summary_resolved` sobre ese documento: subir de nuevo un PDF pidiendo resumen no debe ignorar el
+// pedido solo porque el contenido ya estaba guardado.
+func (u *ExtractUseCase) resolveDuplicate(ctx context.Context, in domain.IncomingDocument, existing domain.StoredDocumentSummary, checksum domain.Checksum, extraction domain.Extraction) (domain.IngestResult, error) {
+	result := domain.IngestResult{
+		DocumentID:       existing.DocumentID,
+		Filename:         in.Filename,
+		Checksum:         checksum,
+		DeliveryStatus:   domain.DeliveryAvailable,
+		SummaryStatus:    existing.SummaryStatus,
+		SummaryText:      existing.Summary,
+		ExtractionTimeMS: extraction.TimeMS,
+		Warnings:         extraction.Warnings,
+	}
+	needsSummary := existing.SummaryStatus == domain.SummaryNotRequested || existing.SummaryStatus == domain.SummaryFailed
+	if !in.Summarize || !needsSummary {
+		return result, nil
+	}
+
+	summary, err := u.summarize(ctx, true, existing.DocumentID, extraction.Text)
+	if err != nil {
+		return domain.IngestResult{}, err
+	}
+	if err := u.publisher.Publish(ctx, domain.SummaryResolvedEvent{
+		DocumentID:    existing.DocumentID,
+		Checksum:      checksum,
+		Summary:       summary.Text,
+		SummaryTimeMS: summary.TimeMS,
+		ResolvedAt:    u.now().UTC(),
+	}); err != nil {
+		return domain.IngestResult{}, err
+	}
+	result.SummaryStatus = domain.SummaryResolved
+	result.SummaryText = summary.Text
+	result.SummaryTimeMS = summary.TimeMS
+	return result, nil
 }
 
 // summarize resuelve el resumen solo si el cliente lo pidió; si no, devuelve un resumen vacío. Un
@@ -160,7 +214,7 @@ func (u *ExtractUseCase) publish(ctx context.Context, ing ingestion) error {
 		Checksum:      ing.checksum,
 		Summary:       ing.summary.Text,
 		SummaryTimeMS: ing.summary.TimeMS,
-		ResolvedAt:    time.Now().UTC(),
+		ResolvedAt:    u.now().UTC(),
 	})
 }
 

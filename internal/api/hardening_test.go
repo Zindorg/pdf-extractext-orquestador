@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/Zindorg/pdf-extractext-orquestador/internal/domain"
 )
 
 func TestExtractRechazaUnCuerpoMayorAlTopeSinLlegarAlCasoDeUso(t *testing.T) {
@@ -138,5 +140,19 @@ func mustNewRouter(deps Deps) *gin.Engine {
 func TestNewRouterRechazaProxiesInvalidos(t *testing.T) {
 	if _, err := NewRouter(Deps{TrustedProxies: []string{"no-es-una-red"}}); err == nil {
 		t.Fatal("se esperaba error con TRUSTED_PROXIES inválida")
+	}
+}
+
+func TestPersistidorCaidoResponde503ConSuCodigo(t *testing.T) {
+	router := mustNewRouter(Deps{
+		Extract: &extractUseCaseStub{},
+		Summary: &summaryUseCaseStub{},
+		Proxy:   &proxyUseCaseStub{err: fmt.Errorf("%w: llamar al Persistidor: connection refused", domain.ErrPersisterUnavailable)},
+	})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/documents/"+testDocumentID, nil))
+
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"persister_unavailable"`) {
+		t.Fatalf("status = %d, cuerpo = %s; quería 503 persister_unavailable", rec.Code, rec.Body.String())
 	}
 }

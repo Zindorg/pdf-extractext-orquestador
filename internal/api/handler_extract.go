@@ -24,7 +24,7 @@ func handleExtract(useCase ExtractUseCase, publicBaseURL string, maxBytes int) g
 
 		result, err := useCase.Execute(c.Request.Context(), domain.IncomingDocument{
 			Bytes:     in.Document,
-			Filename:  filenameOf(c),
+			Filename:  in.Filename,
 			Summarize: in.Summarize,
 			Metadata:  map[string]any{},
 		})
@@ -37,17 +37,4 @@ func handleExtract(useCase ExtractUseCase, publicBaseURL string, maxBytes int) g
 		c.Header("Location", documentLocation(publicBaseURL, result.DocumentID))
 		c.JSON(http.StatusAccepted, newExtractAccepted(result))
 	}
-}
-
-// filenameOf lee el nombre que declaró el cliente. Es un dato del cliente; el archivo no se guarda.
-func filenameOf(c *gin.Context) string {
-	form, err := c.MultipartForm()
-	if err != nil {
-		return ""
-	}
-	documents := form.File["document"]
-	if len(documents) == 0 {
-		return ""
-	}
-	return documents[0].Filename
 }

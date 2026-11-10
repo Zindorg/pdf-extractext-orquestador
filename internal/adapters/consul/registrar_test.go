@@ -91,7 +91,7 @@ func TestDeregisterUsaElID(t *testing.T) {
 	}
 }
 
-func TestRegisterWithRetryReintentaHastaLograrlo(t *testing.T) {
+func TestMaintainReintentaYRenuevaElRegistro(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
@@ -100,26 +100,44 @@ func TestRegisterWithRetryReintentaHastaLograrlo(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	var errs int
-	if err := New(srv.URL, "", Registration{ID: "x"}).RegisterWithRetry(ctx, func(error) { errs++ }); err != nil {
-		t.Fatalf("RegisterWithRetry: %v", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	var registered, errs atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		New(srv.URL, "", Registration{ID: "x"}).Maintain(ctx, 20*time.Millisecond,
+			func() { registered.Add(1) }, func(error) { errs.Add(1) })
+		close(done)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for calls.Load() < 4 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
-	if calls.Load() != 2 || errs != 1 {
-		t.Errorf("llamadas = %d, errores = %d", calls.Load(), errs)
+	cancel()
+	<-done
+
+	if calls.Load() < 4 {
+		t.Fatalf("llamadas = %d: debe reintentar y después renovar el registro", calls.Load())
+	}
+	if errs.Load() != 1 || registered.Load() != 1 {
+		t.Errorf("errores = %d, registros recuperados = %d; quería 1 y 1", errs.Load(), registered.Load())
 	}
 }
 
-func TestRegisterWithRetryCortaConElContexto(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
+func TestMaintainTerminaConElContexto(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer srv.Close()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := New(srv.URL, "", Registration{ID: "x"}).RegisterWithRetry(ctx, nil); err == nil {
-		t.Fatal("se esperaba el error del contexto")
+
+	done := make(chan struct{})
+	go func() {
+		New(srv.URL, "", Registration{ID: "x"}).Maintain(ctx, time.Hour, nil, nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Maintain no terminó al cancelar el contexto")
 	}
 }
